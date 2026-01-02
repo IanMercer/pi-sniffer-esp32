@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pi-Sniffer Live Data</title>
+    <link rel="stylesheet" href="style.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&family=Fira+Code&display=swap" rel="stylesheet">
+</head>
+<body>
+    <header>
+        <h1>Pi-Sniffer Dashboard</h1>
+        <div class="status-bar">
+            <div id="status-dot" class="status-indicator"></div>
+            <span id="status-text">Disconnected</span>
+        </div>
+    </header>
+
+    <main>
+        <div class="dashboard-grid">
+            <div class="card">
+                <h2>Total Packets</h2>
+                <div id="counter" style="font-size: 2rem; font-weight: bold; color: var(--accent-color);">0</div>
+            </div>
+            <div class="card">
+                <h2>Last Active Device</h2>
+                <div id="last-device" style="font-size: 1.2rem; color: var(--text-primary);">None</div>
+            </div>
+            <!-- Add more stats cards here if needed -->
+        </div>
+
+        <div class="card" style="display: flex; flex-direction: column; flex: 1;">
+            <h2>Live Data Stream <button onclick="clearLog()" style="background: transparent; border: 1px solid var(--border-color); color: var(--text-secondary); padding: 4px 8px; border-radius: 4px; cursor: pointer; font-size: 0.8rem;">Clear</button></h2>
+            <div id="data-stream" class="data-stream-container">
+                <div class="empty-state">Waiting for data...</div>
+            </div>
+        </div>
+    </main>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="client.js"></script>
+</body>
+</html>
