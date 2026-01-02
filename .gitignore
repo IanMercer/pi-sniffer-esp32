@@ -1,19 +1,25 @@
-# C extensions
-*.so
-*.o
-bluetoothctl
-.vscode/c_cpp_properties.json
-scan
-mqtt
-cgijson
-*.save
-*.save.1
-*.save.2
-tiger-*
-raspberrypi-*
-store-*
-*.c.save
-*.c.old
-*.msg
-.vscode
+# Build artifacts
+build/
+managed_components/
+dependencies.lock
 
+# IDE files
+.vscode/
+.idea/
+*.code-workspace
+
+# ESP-IDF
+sdkconfig
+sdkconfig.old
+
+# PlatformIO
+.pio/
+.pioenvs/
+.piolibdeps/
+
+# Compiled files
+*.o
+*.a
+*.elf
+*.bin
+*.map

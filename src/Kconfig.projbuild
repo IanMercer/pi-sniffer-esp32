@@ -1,0 +1,56 @@
+# ESP-IDF Kconfig for BLE Sniffer
+
+menu "BLE Sniffer Configuration"
+
+    config BLE_SNIFFER_WIFI_SSID
+        string "WiFi SSID"
+        default "your-wifi-ssid"
+        help
+            WiFi network name to connect to.
+
+    config BLE_SNIFFER_WIFI_PASSWORD
+        string "WiFi Password"
+        default "your-wifi-password"
+        help
+            WiFi network password.
+
+    config BLE_SNIFFER_API_HOST
+        string "API Host"
+        default "your-server.com"
+        help
+            REST API server hostname.
+
+    config BLE_SNIFFER_API_PORT
+        int "API Port"
+        default 80
+        help
+            REST API server port.
+
+    config BLE_SNIFFER_API_PATH
+        string "API Path"
+        default "/api/devices"
+        help
+            REST API endpoint path.
+
+    config BLE_SNIFFER_SCAN_DURATION
+        int "Scan Duration (seconds)"
+        default 10
+        range 5 60
+        help
+            Duration of each BLE scan cycle in seconds.
+
+    config BLE_SNIFFER_REPORT_INTERVAL
+        int "Report Interval (seconds)"
+        default 30
+        range 10 300
+        help
+            How often to send data to the REST API.
+
+    config BLE_SNIFFER_MAX_DEVICES
+        int "Maximum Tracked Devices"
+        default 128
+        range 32 256
+        help
+            Maximum number of BLE devices to track simultaneously.
+
+endmenu

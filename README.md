@@ -1,96 +1,187 @@
-# pi-sniffer aka Crowd Alert
-This project counts people!  It can figure out how many people are present in a given area using a handful of very cheap sensors. It achieves this by counting cellphones. Since most people carry one these days, and since iPhones automatically turn Bluetooth back on every day, there are enough people in most populations with active Bluetooth signals that we can calculate a total number of people with a high statistical significance.
+# ESP32 BLE Sniffer (Crowd Alert)
 
-This is not without challenges as cell phones randomize their mac address and a single person may have multiple bluetooth devices on them.
+A simplified version of pi-sniffer designed specifically for ESP32 devices. This firmware scans for nearby Bluetooth Low Energy (BLE) devices and estimates crowd density by counting devices.
 
-Using the count of people present you can power displays that warn people when it's too crowded. This capability can be used to reduce crowding to help prevent the spread of COVID-19. It also gives people confidence that the store, restroom, railway carriage or other enclosed space they are about to enter is not crowded, helping us all feel confident again going about our daily lives.
+## Features
 
-<blockquote>
-NOTE: A major revision is in the works splitting all code concerned with sending data to MQTT / WebHooks / Azure IoT etc.
-into separate services communicating over DBUS to the main 'sniffer' service. The DBUS interface definition can be found
-in `src/dbus`. This will allow other languages (Python, Rust, ...) to be used more easily to consume the person data
-produced by this service.
-</blockquote>
+- **BLE Device Scanning**: Continuously scans for nearby BLE devices
+- **Device Tracking**: Maintains a list of discovered devices with signal strength tracking
+- **Kalman Filtering**: Smooths RSSI readings for more accurate distance estimation
+- **Distance Calculation**: Estimates device distance based on RSSI values
+- **MAC Randomization Handling**: Detects public vs random MAC addresses
+- **REST API**: Sends device data to a configurable HTTP endpoint
+- **WiFi Provisioning**: Easy WiFi setup via captive portal (no hardcoded credentials!)
+- **Double-Press Config**: Re-enter config mode anytime by double-pressing BOOT button
 
-The code here recently won first place in the global [BetterHealth Hackathon](https://tinyurl.com/crowdalert) organized by HCL and Microsoft. 
+## Hardware Requirements
 
-But this system isn't limited to crowding signs. You can use the data it collects in many other ways: as an input to a smart home controlling lighting and heating based on how many people are home and which areas of the home are occupied, or as a feed to a marketing analysis system, ...
+- ESP32 development board (ESP32-WROOM-32, ESP32-DevKitC, etc.)
+- USB cable for programming and power
 
-Not only does this project count how many phones are present, it tracks every other device that comes into range and can send data back over MQTT about them. For devices other than cellphones, i.e ones with either defined names or public (unchanging) mac addresses you can use this information to trigger actions. For example, put an iBeacon on your car and trigger an action when it comes home or after it's been gone for a set time.
+## First-Time Setup
 
-It uses the built-in Linux BLUEZ libraries and the Bluetooth antenna on any Raspberry Pi (Pi3 is recommended but also runs on PiW and Pi4) to scan for nearby BLE devices. But it's also written to be as portable as possible using only the C language and avoiding dependencies unless absolutely necessary.
+1. **Flash the firmware** to your ESP32
+2. **Power on** the device
+3. The device will create a WiFi network: **`DC Sniffer`**
+4. **Connect** to this network with your phone or computer
+5. **Open a browser** and go to: `http://192.168.4.1`
+6. **Enter your WiFi credentials** and click "Save & Connect"
+7. The device will **reboot** and connect to your WiFi network
 
-It reports all BLE devices found (Mac address, name, type, UUIDs, ...) and their approximate distance to an MQTT endpoint. It applies a simple Kalman filter to smooth the distance values. It also handles iPhones and other Apple devices that randomize their mac addresses periodically and can give a reliable count of how many phones/watches/... are in-range.
+## Re-Entering Configuration Mode
 
-![image](https://user-images.githubusercontent.com/347540/85953280-1cb7f300-b924-11ea-96d5-07c217a57e24.png "Multiple Pis and many BLE devices in action")
-![image](https://user-images.githubusercontent.com/347540/85953412-dd3dd680-b924-11ea-8eeb-a3b328f91d19.png "A single stationary device")
+To change WiFi settings after initial setup:
 
-The system is also designed to be fault-tolerant. It runs just fine even when the internet is down. In a system with multiple sensors and multiple displays the loss of any one component should have minimal impact on the whole system.
+1. **Double-press the BOOT button** within 0.5 seconds
+2. The device will restart in config mode
+3. Connect to `DC Sniffer` and reconfigure
 
-# applications
-* Power displays that warn when a confined space is getting too crowded to encourage people to 'socially distance' by coming back later or picking a less crowded store / room / railway carriage / bus / ...
-* Detect cell phones entering your home, garden, barn, ...
-* Put the heating or air conditioning on when there are two or more cellphones in the house and off otherwise
-* Locate cars, dogs, ... using iBeacons attached to moving objects (reverse of iBeacon normal usage) 
-* Gather other advertised data and transmit to MQTT (temperature, fitbit, cycleops, ...)
+Alternatively, on boot:
+- You have **3 seconds** to double-press BOOT button to enter config mode
+- The LED may flash to indicate the window for double-press
 
-# goals
-* Scan for BLE devices nearby a Raspberry Pi using the built-in Bluetooth adapter
-* No external dependencies: no Python, no Node.js, no fragile package dependencies, easy portability
-* Simplicity: do one thing well, no frills
+## Configuration
 
-# iOS MAC address randomization
-Tracking iOS (and many Android) devices is complicated by the fact that they switch Mac addresses unpredictably: sometimes after a few seconds, sometimes after many minutes. You can see two MAC address swaps in this example:
-![image](https://user-images.githubusercontent.com/347540/85953525-cc419500-b925-11ea-9693-012aeaa61b60.png)
+Edit `include/config.h` to configure:
 
-There is no (easy) way to distinguish a MAC-flipping event from a new device arrival event. Until the old mac address pings again they could be the same device.
-The pi-sniffer code includes an algorithm to calculate the minimum possible number of devices present assuming that any overlap in time means two sequences are different devices, but otherwise packing them all together like events on a calendar to find the minimum possible number of devices present.
+```c
+// REST API endpoint
+#define API_HOST            "your-server.com"
+#define API_PORT            80
+#define API_PATH            "/api/devices"
 
-Pi-sniffer transmits this min-count every time it changes so you can easily see how many devices are in range of any of your RPi devices.
+// Scanning parameters
+#define SCAN_DURATION_SEC   10      // Duration of each scan cycle
+#define REPORT_INTERVAL_SEC 30      // How often to send data to API
+#define MAX_DEVICES         128     // Maximum tracked devices
+```
 
-![image](https://user-images.githubusercontent.com/347540/85953581-54279f00-b926-11ea-8d02-fb155d409f61.png)
+## Building and Flashing
 
-It actually transmits a count for each range (1, 2, 5, ...)
-![image](https://user-images.githubusercontent.com/347540/86996091-8ffd0880-c15f-11ea-991b-8a613041e4a0.png)
+### Using PlatformIO
 
-# MQTT topics
+1. Install PlatformIO IDE or CLI
+2. Open this folder in PlatformIO
+3. Build and upload:
+   ```bash
+   pio run -t upload
+   ```
 
-The MQTT packet is now JSON encoded. It includes the property that has changed and a timestamp. Properties may include `name`, `distance`, `alias`, `power`, `type`, `uuids`, `serviceData`, `manufacturer`, `manufdata`, `temperature`, `humidity`.
+### Using ESP-IDF
 
-The MQTT topic is of the form: BLF/<hostname>/messages/events/<property_name>
-   
-For a summary of all devices seen by the access point the following topic is sent:
+1. Install ESP-IDF v5.0+
+2. Configure the project:
+   ```bash
+   idf.py menuconfig
+   ```
+3. Build and flash:
+   ```bash
+   idf.py build flash monitor
+   ```
 
-    BLF/<hostname>/summary/dist_hist             -- an array of bytes containing the count of devices at each range 
+## REST API Data Format
 
-An `up` message is also sent on startup.
+The device sends JSON data to the configured endpoint:
 
-# Time
+```json
+{
+  "device_id": "ESP32_AABBCC",
+  "timestamp": 1704246600,
+  "devices": [
+    {
+      "mac": "AA:BB:CC:DD:EE:FF",
+      "rssi": -65,
+      "distance": 2.5,
+      "name": "iPhone",
+      "category": "phone",
+      "address_type": "random",
+      "seen_count": 15,
+      "first_seen": 1704246000,
+      "last_seen": 1704246590
+    }
+  ],
+  "summary": {
+    "total_devices": 12,
+    "phones": 5,
+    "computers": 2,
+    "wearables": 1,
+    "beacons": 3,
+    "other": 1
+  }
+}
+```
 
-Given delays in MQTT transmit, receive and re-transmit to the receiving application it's a good idea to use the timestamp passed in the packet. Make sure all your Pis are synchronized to the same time.
+## How It Works
 
-# status
-* Recently updated to use the Eclipse PAHO MQTT C library which support SSL and Async code. This is now the only dependency.
-* This is a work in progress and is still changing fairly rapidly.
-* There is a `build.sh` file that builds and runs the code. 
-* There is a `log.sh` file that tails the log while it's running.
-* The MQTT topic prefix, server IP (or FQDN) and port are configurable.
-* Environment variables are also used to configure the RSSI to distance conversion parameters for indoor/outdoor settings.
-* Multiple instances communicate over UDP on port 7779 (also configurable).
-* The total number of people present x 10.0 x a configurable scale factor is sent over UDP 7778 (also configurable).  (It's actually the expectation of the probability curve for the number of people present so after a period of inactivity it goes down to zero following a curve.)
-* A separate ESP8266 project is available that listens to the port and displays a crowd warning indication
+1. **Boot Check**: On startup, waits 3 seconds for double-press to enter config mode
+2. **Credential Check**: If no WiFi credentials stored, automatically enters config mode
+3. **Provisioning**: In config mode, creates AP with captive portal for WiFi setup
+4. **WiFi Connect**: Connects to configured WiFi network
+5. **Scanning**: Continuously scans for BLE devices
+6. **Tracking**: Each discovered device is added to an internal tracking list
+7. **Filtering**: RSSI values are smoothed using a Kalman filter
+8. **Distance**: Distance is calculated from smoothed RSSI values
+9. **Classification**: Devices are categorized based on manufacturer data and names
+10. **Reporting**: Periodically sends device data to the REST API endpoint
 
-# plans
-* Decode advertised data for common iBeacons that also send environmental data (e.g. Sensoro)
-* Gather other advertised data and transmit to MQTT including temperature, battery, steps, heart rate, ...
-* Combine multiple distance values to do trilateration and approximate location, simple ML model
+## Button Functions
 
-# getting started
+| Action | Function |
+|--------|----------|
+| **Double-press** (during 3s boot window) | Enter config mode |
+| **Double-press** (while running) | Clear credentials & reboot to config mode |
+| **Long press** (2+ seconds) | Clear all credentials & reboot |
+| **Single press** | Print device summary to serial log |
 
-* Set up instructions can be found [here](docs/GettingStarted.md).
+## Crowd Estimation
 
+The system estimates crowd size by counting mobile phones. Since most people carry phones with active Bluetooth, the phone count provides a reasonable estimate of people present.
 
-# FAQ
+**Note**: iOS devices randomize their MAC addresses, but the system handles this by:
+- Tracking device appearance patterns
+- Using manufacturer data for identification
+- Maintaining a minimum device count based on overlapping observations
 
-Please see the [FAQ](docs/FAQ.md) for more information.
+## Troubleshooting
 
+### Can't connect to WiFi after configuration
+- Double-press BOOT button to re-enter config mode
+- Check that SSID and password are correct
+- Ensure your router is 2.4GHz (ESP32 doesn't support 5GHz)
+
+### Captive portal doesn't appear
+- Manually navigate to `http://192.168.4.1`
+- Try a different browser or device
+- Disable mobile data temporarily
+
+### Device keeps rebooting
+- Long-press BOOT button (2+ seconds) to clear all settings
+- Re-flash the firmware
+
+## Project Structure
+
+```
+esp32/
+├── include/
+│   ├── config.h           # Configuration settings
+│   ├── kalman.h           # Kalman filter header
+│   ├── device.h           # Device tracking structures
+│   ├── ble_scanner.h      # BLE scanner interface
+│   ├── wifi_manager.h     # WiFi station mode
+│   ├── wifi_provision.h   # Captive portal provisioning
+│   ├── button_handler.h   # Button press detection
+│   └── http_client.h      # REST API client
+└── src/
+    ├── main.c             # Main application
+    ├── kalman.c           # Kalman filter implementation
+    ├── device.c           # Device tracking logic
+    ├── ble_scanner.c      # BLE scanning
+    ├── wifi_manager.c     # WiFi connection handling
+    ├── wifi_provision.c   # Captive portal & NVS storage
+    ├── button_handler.c   # Button interrupt handling
+    └── http_client.c      # HTTP POST implementation
+```
+
+## License
+
+MIT License - See LICENSE file for details.
