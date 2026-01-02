@@ -16,12 +16,10 @@
 #define WIFI_MAX_RETRY      10
 
 // ============================================================================
-// REST API Configuration
-// ============================================================================
-#define API_HOST            "your-server.com"
-#define API_PORT            80
-#define API_PATH            "/api/devices"
+#define API_URL             "https://3334.xomnghien.com/api/devices"
 #define API_TIMEOUT_MS      10000
+// Skip SSL certificate verification (e.g. for self-signed certs)
+#define API_SKIP_CERT_CHECK 1
 
 // ============================================================================
 // BLE Scanning Configuration

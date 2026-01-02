@@ -7,6 +7,7 @@
 #include "config.h"
 
 #include "esp_http_client.h"
+#include "esp_crt_bundle.h"
 #include "esp_log.h"
 #include "cJSON.h"
 
@@ -107,15 +108,22 @@ bool http_send_devices(const device_list_t *list, const char *device_id) {
     
     ESP_LOGD(TAG, "Sending: %s", json_body);
     
-    // Build URL
-    char url[256];
-    snprintf(url, sizeof(url), "http://%s:%d%s", API_HOST, API_PORT, API_PATH);
+    // URL is defined in config
+    const char *url = API_URL;
+    
+    // Check if HTTPS is used to optionally skip cert check
+    bool is_https = (strncmp(url, "https", 5) == 0);
+
+    ESP_LOGD(TAG, "Sending to: %s", url);
     
     // Configure HTTP client
     esp_http_client_config_t config = {
         .url = url,
         .method = HTTP_METHOD_POST,
         .timeout_ms = API_TIMEOUT_MS,
+        // Use the default CRT bundle for SSL verification (works with Cloudflare)
+        .crt_bundle_attach = esp_crt_bundle_attach,
+        // .skip_cert_common_name_check: false (Default - we want to verify to satisfy strict servers)
     };
     
     esp_http_client_handle_t client = esp_http_client_init(&config);
@@ -152,15 +160,26 @@ bool http_send_devices(const device_list_t *list, const char *device_id) {
 
 bool http_post_json(const char *host, int port, const char *path,
                     const char *json_body, http_response_t *response) {
-    // Build URL
+    // Build URL from Host/Port/Path arguments
     char url[256];
     snprintf(url, sizeof(url), "http://%s:%d%s", host, port, path);
+    // Note: This helper function http_post_json currently assumes HTTP because it takes host/port arguments usually used for mDNS resolution or similar.
+    // If we want it to support HTTPS, we'd need to pass the full URL or an 'is_https' flag. 
+    // Given the arguments, we will construct a standard URL.
+    // However, if the user passes 443 as port, we could infer.
+    if (port == 443) {
+         snprintf(url, sizeof(url), "https://%s:%d%s", host, port, path);
+    }
     
+    // Check if HTTPS is used to optionally skip cert check
+    bool is_https = (strncmp(url, "https", 5) == 0);
+
     // Configure HTTP client
     esp_http_client_config_t config = {
         .url = url,
         .method = HTTP_METHOD_POST,
         .timeout_ms = API_TIMEOUT_MS,
+        .crt_bundle_attach = esp_crt_bundle_attach,
     };
     
     esp_http_client_handle_t client = esp_http_client_init(&config);
