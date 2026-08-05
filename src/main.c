@@ -31,6 +31,7 @@
 #include "ble_scanner.h"
 #include "http_client.h"
 #include "device.h"
+#include "mac_pack.h"
 
 static const char *TAG = "BLE_SNIFFER";
 
@@ -54,10 +55,13 @@ static void on_device_discovered(const uint8_t *mac,
                                   address_type_t addr_type,
                                   const char *name,
                                   uint16_t manufacturer_id,
-                                  int8_t tx_power) {
+                                  int8_t tx_power,
+                                  const uint8_t *manufacturer_payload,
+                                  uint8_t manufacturer_payload_len) {
     // Add or update device in our tracking list
     ble_device_t *device = device_update(&device_list, mac, rssi, addr_type,
-                                          name, manufacturer_id, tx_power);
+                                          name, manufacturer_id, tx_power,
+                                          manufacturer_payload, manufacturer_payload_len);
     
     if (device == NULL) {
         ESP_LOGW(TAG, "Device list full, could not add device");
@@ -65,10 +69,31 @@ static void on_device_discovered(const uint8_t *mac,
     }
     
 #if DEBUG_LOGGING && DEBUG_DEVICE_DISCOVERY
-    ESP_LOGI(TAG, "Device: %s RSSI:%d Dist:%.1fm Cat:%s Name:%s",
+    char mfg_buf[8];
+
+    // Hex-dump the raw manufacturer-specific payload (beyond just the 2-byte
+    // company ID) so unrecognized devices - e.g. a Samsung TV that only
+    // reports as "phone" - can be investigated and correlated against real
+    // captured samples, the same way the original pi-sniffer's manufacturer
+    // heuristics were built up from observed byte patterns.
+    char payload_hex[48] = "";
+    if (manufacturer_payload != NULL && manufacturer_payload_len > 0) {
+        uint8_t n = manufacturer_payload_len;
+        if (n > 15) n = 15;  // cap so the log line stays a manageable length
+        for (uint8_t i = 0; i < n; i++) {
+            char byte_str[4];
+            snprintf(byte_str, sizeof(byte_str), "%02X ", manufacturer_payload[i]);
+            strncat(payload_hex, byte_str, sizeof(payload_hex) - strlen(payload_hex) - 1);
+        }
+    }
+
+    ESP_LOGI(TAG, "Device: %s RSSI:%d Dist:%.1fm Cat:%s Addr:%s Mfg:%s Name:%s Payload:[%s]",
              device->mac_str, rssi, device->distance,
              category_to_string(device->category),
-             device->name[0] ? device->name : "?");
+             addr_type == ADDRESS_TYPE_PUBLIC ? "public" : (addr_type == ADDRESS_TYPE_RANDOM ? "random" : "unknown"),
+             manufacturer_to_string(device->has_manufacturer_data, device->manufacturer_id, mfg_buf, sizeof(mfg_buf)),
+             device->name[0] ? device->name : "?",
+             payload_hex);
 #endif
 }
 
@@ -107,7 +132,7 @@ static void init_sntp(void) {
 static void print_summary(void) {
     device_summary_t summary;
     device_get_summary(&device_list, &summary);
-    
+
     ESP_LOGI(TAG, "=== Device Summary ===");
     ESP_LOGI(TAG, "Total: %d devices", summary.total_devices);
     ESP_LOGI(TAG, "  Phones: %d", summary.phones);
@@ -119,6 +144,45 @@ static void print_summary(void) {
     ESP_LOGI(TAG, "  Speakers: %d", summary.speakers);
     ESP_LOGI(TAG, "  Beacons: %d", summary.beacons);
     ESP_LOGI(TAG, "  Other: %d", summary.other);
+    ESP_LOGI(TAG, "----------------------");
+
+    time_t now = time(NULL);
+    for (int i = 0; i < MAX_DEVICES; i++) {
+        const ble_device_t *device = &device_list.devices[i];
+        if (!device->active) {
+            continue;
+        }
+        char mfg_buf[8];
+        char superseded_buf[32] = "";
+        if (device->has_superseded_by) {
+            char superseded_mac[18];
+            mac_to_string(device->superseded_by, superseded_mac);
+            snprintf(superseded_buf, sizeof(superseded_buf), "  -> %s (p=%.2f)",
+                     superseded_mac, device->superseded_probability);
+        }
+        char window_buf[16];
+        snprintf(window_buf, sizeof(window_buf), "%lds-%lds",
+                 (long)(now - device->first_seen), (long)(now - device->last_seen));
+
+        char tx_buf[5];
+        if (device->tx_power == TX_POWER_UNKNOWN) {
+            snprintf(tx_buf, sizeof(tx_buf), "?");
+        } else {
+            snprintf(tx_buf, sizeof(tx_buf), "%d", device->tx_power);
+        }
+
+        ESP_LOGI(TAG, "  %s  %-5s  RSSI:%4d  TX:%4s  dist:%5.1fm  seen:%3lu  window:%9s  %-20s  %s%s",
+                 device->mac_str,
+                 category_to_string(device->category),
+                 device->raw_rssi,
+                 tx_buf,
+                 device->distance,
+                 (unsigned long)device->seen_count,
+                 window_buf,
+                 manufacturer_to_string(device->has_manufacturer_data, device->manufacturer_id, mfg_buf, sizeof(mfg_buf)),
+                 device->name[0] ? device->name : "",
+                 superseded_buf);
+    }
     ESP_LOGI(TAG, "======================");
 }
 
@@ -167,10 +231,16 @@ static void report_task(void *pvParameters) {
             if (removed > 0) {
                 ESP_LOGI(TAG, "Removed %d stale devices", removed);
             }
-            
+
+#if ENABLE_MAC_PACKING
+            // Detect MAC-rotated devices so they aren't double-counted
+            mac_pack_run(&device_list);
+#endif
+
             // Print summary
             print_summary();
             
+#if !DISABLE_API_SEND
             // Send to REST API if connected
             if (wifi_is_connected()) {
                 ESP_LOGI(TAG, "Sending device data to API...");
@@ -182,6 +252,9 @@ static void report_task(void *pvParameters) {
             } else {
                 ESP_LOGW(TAG, "WiFi not connected, skipping report");
             }
+#else
+            ESP_LOGI(TAG, "API reporting disabled (DISABLE_API_SEND), skipping send");
+#endif
             
             last_report_time = now;
         }
@@ -200,7 +273,7 @@ static void scan_task(void *pvParameters) {
             ESP_LOGI(TAG, "Starting BLE scan for %d seconds", SCAN_DURATION_SEC);
             ble_scanner_start(SCAN_DURATION_SEC, on_device_discovered);
         }
-        
+
         // Wait for scan to complete
         vTaskDelay((SCAN_DURATION_SEC + 1) * 1000 / portTICK_PERIOD_MS);
     }

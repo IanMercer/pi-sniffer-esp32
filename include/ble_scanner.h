@@ -20,13 +20,18 @@ typedef enum {
 
 /**
  * Callback function for device discovery
+ * @param manufacturer_payload Manufacturer-specific data with the 2-byte
+ *        manufacturer ID stripped off (NULL if no manufacturer data)
+ * @param manufacturer_payload_len Length of manufacturer_payload
  */
-typedef void (*device_callback_t)(const uint8_t *mac, 
+typedef void (*device_callback_t)(const uint8_t *mac,
                                    int8_t rssi,
                                    address_type_t addr_type,
                                    const char *name,
                                    uint16_t manufacturer_id,
-                                   int8_t tx_power);
+                                   int8_t tx_power,
+                                   const uint8_t *manufacturer_payload,
+                                   uint8_t manufacturer_payload_len);
 
 /**
  * Initialize the BLE scanner

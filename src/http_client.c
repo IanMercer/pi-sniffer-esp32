@@ -67,7 +67,16 @@ static char* build_device_json(const device_list_t *list, const char *device_id)
         cJSON_AddNumberToObject(device_obj, "seen_count", dev->seen_count);
         cJSON_AddNumberToObject(device_obj, "first_seen", (double)dev->first_seen);
         cJSON_AddNumberToObject(device_obj, "last_seen", (double)dev->last_seen);
-        
+
+        if (dev->has_superseded_by) {
+            char superseded_mac[18];
+            mac_to_string(dev->superseded_by, superseded_mac);
+            cJSON_AddStringToObject(device_obj, "superseded_by", superseded_mac);
+        } else {
+            cJSON_AddNullToObject(device_obj, "superseded_by");
+        }
+        cJSON_AddNumberToObject(device_obj, "superseded_probability", dev->superseded_probability);
+
         cJSON_AddItemToArray(devices_array, device_obj);
     }
     

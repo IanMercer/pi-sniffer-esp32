@@ -7,6 +7,7 @@
 
 #include <stdint.h>
 #include <stdbool.h>
+#include <stddef.h>
 #include <time.h>
 #include "kalman.h"
 #include "config.h"
@@ -25,6 +26,8 @@ typedef enum {
     CATEGORY_WATCH,
     CATEGORY_FITNESS,
     CATEGORY_SPEAKER,
+    CATEGORY_FIXED,   // stationary receiver, e.g. an AirPlay target/Apple TV
+    CATEGORY_APPLIANCE, // e.g. a coffee machine, fridge, air filter
     CATEGORY_OTHER
 } device_category_t;
 
@@ -35,8 +38,23 @@ typedef enum {
     ADDRESS_TYPE_RANDOM
 } address_type_t;
 
+// How much to trust a device's name, lowest to highest. A name is only ever
+// overwritten by a value with strictly higher confidence than what's already
+// set (see device_set_name()), so the actual advertised local name always
+// wins over a heuristic guess.
+typedef enum {
+    NAME_CONF_NONE = 0,          // no name set yet
+    NAME_CONF_GENERIC = 100,     // e.g. "Beacon"
+    NAME_CONF_MANUFACTURER = 200,// e.g. "Apple", "AirPrint"
+    NAME_CONF_DEVICE = 300,      // e.g. "AirPods", "HomeKit"
+    NAME_CONF_KNOWN = 400        // the device's actual advertised local name
+} name_confidence_t;
+
 // Maximum name length
 #define MAX_NAME_LENGTH 32
+
+// Sentinel for ble_device_t.tx_power meaning "no TX Power AD field seen yet"
+#define TX_POWER_UNKNOWN INT8_MIN
 
 /**
  * Structure representing a tracked BLE device
@@ -45,7 +63,8 @@ typedef struct {
     uint8_t mac[6];              // MAC address bytes
     char mac_str[18];            // MAC address string "XX:XX:XX:XX:XX:XX"
     char name[MAX_NAME_LENGTH];  // Device name (if available)
-    
+    name_confidence_t name_confidence; // How the current name was determined
+
     address_type_t address_type; // Public or random address
     device_category_t category;  // Device category
     
@@ -53,14 +72,22 @@ typedef struct {
     kalman_filter_t rssi_filter; // Kalman filter for RSSI
     float distance;              // Estimated distance in meters
     
-    int8_t tx_power;             // Reported TX power (if available)
-    uint16_t manufacturer_id;    // Manufacturer ID (if available)
+    int8_t tx_power;             // Reported TX power, or TX_POWER_UNKNOWN
+    uint16_t manufacturer_id;    // Manufacturer ID (only valid if has_manufacturer_data)
+    bool has_manufacturer_data;  // Was a manufacturer-specific AD structure ever seen?
+                                  // (0x0000 is Ericsson's real company ID, so manufacturer_id
+                                  // alone can't distinguish "never seen" from "seen, id 0")
     
     time_t first_seen;           // First time device was seen
     time_t last_seen;            // Most recent time device was seen
     uint32_t seen_count;         // Number of times seen
     
     bool active;                 // Is this slot in use?
+
+    bool has_superseded_by;        // true if this (older) device is believed to have
+                                    // rotated its MAC to superseded_by
+    uint8_t superseded_by[6];      // MAC of the newer device it rotated to (valid iff has_superseded_by)
+    float superseded_probability;  // confidence 0.0-1.0 in that link
 } ble_device_t;
 
 /**
@@ -111,15 +138,30 @@ ble_device_t* device_find(device_list_t *list, const uint8_t *mac);
  * @param name Device name (can be NULL)
  * @param manufacturer_id Manufacturer ID (0 if unknown)
  * @param tx_power TX power (0 if unknown)
+ * @param manufacturer_payload Manufacturer-specific data with the 2-byte
+ *        manufacturer ID stripped off (can be NULL)
+ * @param manufacturer_payload_len Length of manufacturer_payload
  * @return Pointer to the device, or NULL if list is full
  */
-ble_device_t* device_update(device_list_t *list, 
+ble_device_t* device_update(device_list_t *list,
                             const uint8_t *mac,
                             int8_t rssi,
                             address_type_t addr_type,
                             const char *name,
                             uint16_t manufacturer_id,
-                            int8_t tx_power);
+                            int8_t tx_power,
+                            const uint8_t *manufacturer_payload,
+                            uint8_t manufacturer_payload_len);
+
+/**
+ * Set a device's name if the new value has strictly higher confidence than
+ * whatever name is currently set (or no name is set yet). No-op for a NULL
+ * or empty value.
+ * @param device Pointer to the device
+ * @param value New name to consider
+ * @param confidence How trustworthy this name is
+ */
+void device_set_name(ble_device_t *device, const char *value, name_confidence_t confidence);
 
 /**
  * Remove stale devices (not seen recently)
@@ -163,5 +205,16 @@ void mac_to_string(const uint8_t *mac, char *str);
  * @return Category name string
  */
 const char* category_to_string(device_category_t category);
+
+/**
+ * Get manufacturer name for a Bluetooth SIG company identifier
+ * @param has_manufacturer_id Was a manufacturer-specific AD structure seen at all?
+ * @param manufacturer_id Manufacturer ID (ignored unless has_manufacturer_id is true)
+ * @param buf Scratch buffer used if the ID is not recognized (holds "0xXXXX")
+ * @param buf_len Size of buf
+ * @return Manufacturer name, or the hex ID formatted into buf if not recognized,
+ *         or "unknown" if has_manufacturer_id is false
+ */
+const char* manufacturer_to_string(bool has_manufacturer_id, uint16_t manufacturer_id, char *buf, size_t buf_len);
 
 #endif // DEVICE_H

@@ -3,6 +3,8 @@ idf_component_register(
         "main.c"
         "kalman.c"
         "device.c"
+        "mac_pack.c"
+        "apple_heuristic.c"
         "ble_scanner.c"
         "wifi_manager.c"
         "wifi_provision.c"

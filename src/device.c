@@ -5,6 +5,7 @@
 
 #include "device.h"
 #include "config.h"
+#include "apple_heuristic.h"
 #include <string.h>
 #include <stdio.h>
 #include <math.h>
@@ -18,6 +19,42 @@
 
 // Samsung manufacturer ID
 #define SAMSUNG_MANUFACTURER_ID     0x0075
+
+// Bluetooth SIG-assigned company identifiers seen most often in the wild
+static const struct {
+    uint16_t id;
+    const char *name;
+} manufacturer_names[] = {
+    { 0x0000, "Ericsson" },
+    { 0x0001, "Nokia" },
+    { 0x0002, "Intel" },
+    { 0x0003, "IBM" },
+    { 0x0006, "Microsoft" },
+    { 0x000F, "Broadcom" },
+    { APPLE_MANUFACTURER_ID, "Apple" },
+    { 0x0059, "Nordic Semiconductor" },
+    { SAMSUNG_MANUFACTURER_ID, "Samsung" },
+    { 0x0087, "Garmin" },
+    { 0x00E0, "Google" },
+    { 0x0171, "Amazon" },
+    { 0x2502, "Murata" },  // module vendor for many OEM devices, e.g. Nespresso machines
+};
+
+// Known MAC OUI (first 3 bytes) prefixes that reliably indicate a specific
+// device type, sourced from the original pi-sniffer project's
+// heuristic-mac.c (git history prior to the ESP32 rewrite). Only meaningful
+// for PUBLIC-address devices - random/private BLE addresses don't carry
+// real vendor OUI information.
+static const struct {
+    uint8_t oui[3];
+    device_category_t category;
+} mac_oui_categories[] = {
+    { {0xB8, 0xBC, 0x5B}, CATEGORY_TV },  // Samsung TV
+    { {0xD4, 0x9D, 0xC0}, CATEGORY_TV },  // Samsung TV
+    { {0xF8, 0x3F, 0x51}, CATEGORY_TV },  // Samsung TV
+    { {0x5C, 0xC1, 0xD7}, CATEGORY_TV },  // Samsung TV
+    { {0xC8, 0xA6, 0xEF}, CATEGORY_TV },  // Samsung TV (assumed, unconfirmed)
+};
 
 // Category name lookup table
 static const char* category_names[] = {
@@ -33,6 +70,8 @@ static const char* category_names[] = {
     "watch",
     "fitness",
     "speaker",
+    "fixed",
+    "appliance",
     "other"
 };
 
@@ -45,6 +84,17 @@ void device_list_init(device_list_t *list) {
 void mac_to_string(const uint8_t *mac, char *str) {
     sprintf(str, "%02X:%02X:%02X:%02X:%02X:%02X",
             mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
+}
+
+void device_set_name(ble_device_t *device, const char *value, name_confidence_t confidence) {
+    if (value == NULL || value[0] == '\0') {
+        return;
+    }
+    if (device->name_confidence < confidence) {
+        strncpy(device->name, value, MAX_NAME_LENGTH - 1);
+        device->name[MAX_NAME_LENGTH - 1] = '\0';
+        device->name_confidence = confidence;
+    }
 }
 
 ble_device_t* device_find(device_list_t *list, const uint8_t *mac) {
@@ -98,7 +148,18 @@ void device_categorize(ble_device_t *device) {
     if (device->category != CATEGORY_UNKNOWN) {
         return;
     }
-    
+
+    // A known-vendor MAC prefix is the most specific signal we have, but
+    // only meaningful for public (non-randomized) addresses.
+    if (device->address_type == ADDRESS_TYPE_PUBLIC) {
+        for (size_t i = 0; i < sizeof(mac_oui_categories) / sizeof(mac_oui_categories[0]); i++) {
+            if (memcmp(device->mac, mac_oui_categories[i].oui, 3) == 0) {
+                device->category = mac_oui_categories[i].category;
+                return;
+            }
+        }
+    }
+
     // Categorize based on manufacturer ID
     switch (device->manufacturer_id) {
         case APPLE_MANUFACTURER_ID:
@@ -106,17 +167,23 @@ void device_categorize(ble_device_t *device) {
             // Could refine based on manufacturer data bytes
             device->category = CATEGORY_PHONE;
             break;
-            
+
         case MICROSOFT_MANUFACTURER_ID:
             // Microsoft - likely computer
             device->category = CATEGORY_COMPUTER;
             break;
-            
+
         case SAMSUNG_MANUFACTURER_ID:
-            // Samsung - likely phone or tablet
-            device->category = CATEGORY_PHONE;
+            // Samsung's company ID (0x0075) is used by phones, watches, AND
+            // TVs alike - the original pi-sniffer ran into this exact
+            // ambiguity (see heuristic-manufacturers.c in git history) and
+            // deliberately did NOT assume phone, instead planning to
+            // connect and query the device's real name - which this
+            // passive-only scanner doesn't do. Leave uncategorized rather
+            // than guess wrong; the OUI check above and the name/
+            // random-address fallbacks below still get a chance.
             break;
-            
+
         default:
             break;
     }
@@ -164,6 +231,14 @@ void device_categorize(ble_device_t *device) {
                  strstr(lower_name, "fire stick") || strstr(lower_name, "chromecast")) {
             device->category = CATEGORY_TV;
         }
+        else if (strstr(lower_name, "venus")) {
+            // Nespresso machines advertise as "Venus_<serial>" (over a
+            // Murata-manufactured BLE module, manufacturer ID 0x2502, but
+            // Murata modules are used by many unrelated products - the
+            // "Venus" name prefix is what actually identifies this as a
+            // Nespresso machine)
+            device->category = CATEGORY_APPLIANCE;
+        }
     }
     
     // Categorize based on address type
@@ -174,13 +249,15 @@ void device_categorize(ble_device_t *device) {
     }
 }
 
-ble_device_t* device_update(device_list_t *list, 
+ble_device_t* device_update(device_list_t *list,
                             const uint8_t *mac,
                             int8_t rssi,
                             address_type_t addr_type,
                             const char *name,
                             uint16_t manufacturer_id,
-                            int8_t tx_power) {
+                            int8_t tx_power,
+                            const uint8_t *manufacturer_payload,
+                            uint8_t manufacturer_payload_len) {
     time_t now = time(NULL);
     ble_device_t *device = device_find(list, mac);
     
@@ -199,6 +276,7 @@ ble_device_t* device_update(device_list_t *list,
         device->active = true;
         device->first_seen = now;
         device->category = CATEGORY_UNKNOWN;
+        device->tx_power = TX_POWER_UNKNOWN;
         kalman_init(&device->rssi_filter);
         
         list->count++;
@@ -211,27 +289,46 @@ ble_device_t* device_update(device_list_t *list,
     device->raw_rssi = rssi;
     device->address_type = addr_type;
     
-    // Update name if provided and not empty
-    if (name != NULL && name[0] != '\0' && device->name[0] == '\0') {
-        strncpy(device->name, name, MAX_NAME_LENGTH - 1);
-        device->name[MAX_NAME_LENGTH - 1] = '\0';
-    }
-    
-    // Update manufacturer ID
-    if (manufacturer_id != 0) {
+    // The advertised local name is the most trustworthy source we have
+    device_set_name(device, name, NAME_CONF_KNOWN);
+
+    // Update manufacturer ID. A manufacturer-specific AD structure was
+    // present whenever a payload pointer came back, regardless of whether
+    // the ID itself happens to be 0x0000 (Ericsson's real company ID).
+    if (manufacturer_payload != NULL) {
         device->manufacturer_id = manufacturer_id;
+        device->has_manufacturer_data = true;
     }
+
+    // Decode Apple's Continuity protocol manufacturer data, if present, to
+    // fill in name/category with more confidence than the generic
+    // manufacturer-ID/random-address guesses below can. Must run before
+    // device_categorize() so it gets first claim on the category.
+#if ENABLE_APPLE_HEURISTICS
+    if (device->manufacturer_id == APPLE_MANUFACTURER_ID &&
+        manufacturer_payload != NULL && manufacturer_payload_len > 0) {
+        apple_heuristic_process(device, manufacturer_payload, manufacturer_payload_len);
+    }
+#endif
     
     // Update TX power
-    if (tx_power != 0) {
+    if (tx_power != TX_POWER_UNKNOWN) {
         device->tx_power = tx_power;
     }
-    
+
+    // Always use the calibrated RSSI-at-1m constant rather than deriving it
+    // from the device's self-reported TX power: a free-space-path-loss
+    // conversion from TX power is systematically far too optimistic (e.g. a
+    // phone reporting 12 dBm TX power implies -29 dBm at 1m, but real
+    // phones - antenna orientation, hand/pocket/chassis attenuation - never
+    // get close to that), which blew distance estimates out by 10x-100x.
+    int8_t reference_rssi_at_1m = RSSI_ONE_METER;
+
     // Apply Kalman filter to RSSI
     float filtered_rssi = kalman_update(&device->rssi_filter, (float)rssi);
-    
+
     // Calculate distance from filtered RSSI
-    device->distance = calculate_distance((int8_t)filtered_rssi, device->tx_power);
+    device->distance = calculate_distance((int8_t)lroundf(filtered_rssi), reference_rssi_at_1m);
     
     // Try to categorize the device
 #if ENABLE_CATEGORIZATION
@@ -266,9 +363,12 @@ void device_get_summary(const device_list_t *list, device_summary_t *summary) {
         if (!list->devices[i].active) {
             continue;
         }
-        
+        if (list->devices[i].has_superseded_by) {
+            continue;  // MAC-rotated ghost, already counted under its newer MAC
+        }
+
         summary->total_devices++;
-        
+
         switch (list->devices[i].category) {
             case CATEGORY_PHONE:
                 summary->phones++;
@@ -306,4 +406,17 @@ const char* category_to_string(device_category_t category) {
         return category_names[category];
     }
     return "unknown";
+}
+
+const char* manufacturer_to_string(bool has_manufacturer_id, uint16_t manufacturer_id, char *buf, size_t buf_len) {
+    if (!has_manufacturer_id) {
+        return "unknown";
+    }
+    for (size_t i = 0; i < sizeof(manufacturer_names) / sizeof(manufacturer_names[0]); i++) {
+        if (manufacturer_names[i].id == manufacturer_id) {
+            return manufacturer_names[i].name;
+        }
+    }
+    snprintf(buf, buf_len, "0x%04X", manufacturer_id);
+    return buf;
 }

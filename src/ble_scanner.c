@@ -32,25 +32,33 @@ static esp_ble_scan_params_t ble_scan_params = {
 };
 
 /**
- * Extract manufacturer ID from advertisement data
+ * Extract manufacturer ID and the manufacturer-specific payload that
+ * follows it (the payload excludes the 2-byte manufacturer ID itself, e.g.
+ * for Apple this is where the Continuity protocol message type/data live)
+ * from advertisement data.
  */
-static uint16_t get_manufacturer_id(uint8_t *adv_data, uint8_t adv_data_len) {
+static uint16_t get_manufacturer_data(uint8_t *adv_data, uint8_t adv_data_len,
+                                       const uint8_t **payload, uint8_t *payload_len) {
     uint8_t *ptr = adv_data;
-    
+    *payload = NULL;
+    *payload_len = 0;
+
     while (ptr < adv_data + adv_data_len) {
         uint8_t len = ptr[0];
         if (len == 0) break;
-        
+
         uint8_t type = ptr[1];
-        
+
         // Manufacturer Specific Data
         if (type == 0xFF && len >= 3) {
+            *payload = &ptr[4];
+            *payload_len = len - 3;
             return ptr[2] | (ptr[3] << 8);
         }
-        
+
         ptr += len + 1;
     }
-    
+
     return 0;
 }
 
@@ -73,8 +81,8 @@ static int8_t get_tx_power(uint8_t *adv_data, uint8_t adv_data_len) {
         
         ptr += len + 1;
     }
-    
-    return 0;
+
+    return TX_POWER_UNKNOWN;
 }
 
 /**
@@ -169,21 +177,26 @@ static void gap_event_handler(esp_gap_ble_cb_event_t event, esp_ble_gap_cb_param
                                        name, sizeof(name));
                     }
                     
-                    uint16_t manufacturer_id = get_manufacturer_id(
+                    const uint8_t *manufacturer_payload = NULL;
+                    uint8_t manufacturer_payload_len = 0;
+                    uint16_t manufacturer_id = get_manufacturer_data(
                         scan_result->scan_rst.ble_adv,
-                        scan_result->scan_rst.adv_data_len);
-                    
+                        scan_result->scan_rst.adv_data_len,
+                        &manufacturer_payload, &manufacturer_payload_len);
+
                     int8_t tx_power = get_tx_power(
                         scan_result->scan_rst.ble_adv,
                         scan_result->scan_rst.adv_data_len);
-                    
+
                     // Call the callback
                     device_cb(scan_result->scan_rst.bda,
                              scan_result->scan_rst.rssi,
                              addr_type,
                              name[0] ? name : NULL,
                              manufacturer_id,
-                             tx_power);
+                             tx_power,
+                             manufacturer_payload,
+                             manufacturer_payload_len);
                     
 #if DEBUG_DEVICE_DISCOVERY
                     char mac_str[18];

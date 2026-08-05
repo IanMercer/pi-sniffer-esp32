@@ -20,6 +20,8 @@
 #define API_TIMEOUT_MS      10000
 // Skip SSL certificate verification (e.g. for self-signed certs)
 #define API_SKIP_CERT_CHECK 1
+// Disable sending device data to the API (set to 1 to disable, 0 to enable)
+#define DISABLE_API_SEND    1
 
 // ============================================================================
 // BLE Scanning Configuration
@@ -41,7 +43,7 @@
 // ============================================================================
 // RSSI value at 1 meter distance (calibrate for your environment)
 // Typical values: -50 to -70 dBm
-#define RSSI_ONE_METER          -59
+#define RSSI_ONE_METER          -80
 
 // Path loss exponent (2.0-4.0)
 // Lower = indoor/cluttered, Higher = outdoor/open
@@ -60,6 +62,34 @@
 // Enable device categorization based on manufacturer data
 #define ENABLE_CATEGORIZATION   1
 
+// Decode Apple's Continuity protocol manufacturer data (AirPods, HomeKit,
+// Handoff, Nearby Info, etc.) for better name/category detection
+#define ENABLE_APPLE_HEURISTICS 1
+
+// ============================================================================
+// MAC-Rotation Packing Configuration
+// ============================================================================
+// Detect when a device's BLE MAC address has likely rotated (iOS/Android
+// random-MAC privacy feature) so the same physical device isn't double
+// counted as two separate devices.
+#define ENABLE_MAC_PACKING             1
+
+// Below this gap (seconds), a lone single-observation device is treated as
+// noise from the same burst rather than a real device.
+#define MAC_PACK_BLIP_MIN_GAP_SEC      2
+
+// Above this gap (seconds), a lone single-observation device is treated as
+// unrelated rather than a MAC rotation.
+#define MAC_PACK_BLIP_MAX_GAP_SEC      90
+
+// Time constant (seconds) for the exponential decay used to turn the gap
+// between an old device's last sighting and a new device's first sighting
+// into a confidence score.
+#define MAC_PACK_TIME_CONSTANT_SEC     30.0f
+
+// Minimum confidence required to record a superseded-by link.
+#define MAC_PACK_PROBABILITY_THRESHOLD 0.05f
+
 // ============================================================================
 // Debugging
 // ============================================================================
@@ -67,6 +97,6 @@
 #define DEBUG_LOGGING           1
 
 // Log individual device discoveries
-#define DEBUG_DEVICE_DISCOVERY  0
+#define DEBUG_DEVICE_DISCOVERY  1
 
 #endif // CONFIG_H
