@@ -239,6 +239,10 @@ void device_categorize(ble_device_t *device) {
             // Nespresso machine)
             device->category = CATEGORY_APPLIANCE;
         }
+        else if (strstr(lower_name, "droplet")) {
+            // e.g. "Droplet-46A4" - a smart irrigation/appliance controller
+            device->category = CATEGORY_APPLIANCE;
+        }
     }
     
     // Categorize based on address type

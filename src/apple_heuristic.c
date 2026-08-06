@@ -52,14 +52,14 @@ void apple_heuristic_process(ble_device_t *device, const uint8_t *payload, uint8
         case 0x01:
             // An iMac causes this. Mostly iPhone? iWatch too?
             device_set_name(device, "Apple", NAME_CONF_MANUFACTURER);
-            ESP_LOGI(TAG, "%s '%s' Apple device type 0x01 - what is this?", device->mac_str, device->name);
+            ESP_LOGD(TAG, "%s '%s' Apple device type 0x01 - what is this?", device->mac_str, device->name);
             break;
 
         case 0x02:
             // iBeacon
             device_set_name(device, "Beacon", NAME_CONF_MANUFACTURER);
             if (device->category != CATEGORY_BEACON) {
-                ESP_LOGI(TAG, "%s '%s' Beacon", device->mac_str, device->name);
+                ESP_LOGD(TAG, "%s '%s' Beacon", device->mac_str, device->name);
             }
             device->category = CATEGORY_BEACON;  // hard set: unambiguous once seen
             break;
@@ -67,40 +67,40 @@ void apple_heuristic_process(ble_device_t *device, const uint8_t *payload, uint8
         case 0x03:
             // AirPrint - on user action
             device_set_name(device, "AirPrint", NAME_CONF_MANUFACTURER);
-            ESP_LOGI(TAG, "%s '%s' AirPrint", device->mac_str, device->name);
+            ESP_LOGD(TAG, "%s '%s' AirPrint", device->mac_str, device->name);
             break;
 
         case 0x05:
             // AirDrop - on user action
             device_set_name(device, "AirDrop", NAME_CONF_MANUFACTURER);
-            ESP_LOGI(TAG, "%s '%s' AirDrop", device->mac_str, device->name);
+            ESP_LOGD(TAG, "%s '%s' AirDrop", device->mac_str, device->name);
             soft_set_category(&device->category, CATEGORY_PHONE);
             break;
 
         case 0x06:
             // HomeKit - sent constantly by HomeKit accessories
             device_set_name(device, "HomeKit", NAME_CONF_DEVICE);
-            ESP_LOGI(TAG, "%s '%s' HomeKit", device->mac_str, device->name);
+            ESP_LOGD(TAG, "%s '%s' HomeKit", device->mac_str, device->name);
             break;
 
         case 0x07:
             // Proximity Pairing (AirPods) - sent constantly, but rare to catch
             device_set_name(device, "AirPods", NAME_CONF_DEVICE);
-            ESP_LOGI(TAG, "%s '%s' Proximity Pairing", device->mac_str, device->name);
+            ESP_LOGD(TAG, "%s '%s' Proximity Pairing", device->mac_str, device->name);
             device->category = CATEGORY_HEADPHONES;  // hard set: unambiguous once seen
             break;
 
         case 0x08:
             // Siri - on user action, rare
             device_set_name(device, "Siri", NAME_CONF_MANUFACTURER);
-            ESP_LOGI(TAG, "%s '%s' Siri", device->mac_str, device->name);
+            ESP_LOGD(TAG, "%s '%s' Siri", device->mac_str, device->name);
             soft_set_category(&device->category, CATEGORY_PHONE);  // could be anything, assume phone
             break;
 
         case 0x09:
             // AirPlay - on user action for some
             device_set_name(device, "AirPlay", NAME_CONF_MANUFACTURER);
-            ESP_LOGI(TAG, "%s '%s' AirPlay", device->mac_str, device->name);
+            ESP_LOGD(TAG, "%s '%s' AirPlay", device->mac_str, device->name);
             soft_set_category(&device->category, CATEGORY_FIXED);  // probably an Apple TV?
             break;
 
@@ -112,35 +112,35 @@ void apple_heuristic_process(ble_device_t *device, const uint8_t *payload, uint8
             // Target, which is the receiver, e.g. an Apple TV), so it's a
             // phone/computer, not a fixed receiver.
             device_set_name(device, "AirPlay Source", NAME_CONF_MANUFACTURER);
-            ESP_LOGI(TAG, "%s '%s' AirPlay Source", device->mac_str, device->name);
+            ESP_LOGD(TAG, "%s '%s' AirPlay Source", device->mac_str, device->name);
             soft_set_category(&device->category, CATEGORY_PHONE);  // could be a Mac, assume phone
             break;
 
         case 0x0b:
             // Magic Switch - sent when an Apple Watch has lost pairing to its phone
             device_set_name(device, "iWatch", NAME_CONF_DEVICE);
-            ESP_LOGI(TAG, "%s '%s' Magic Switch", device->mac_str, device->name);
+            ESP_LOGD(TAG, "%s '%s' Magic Switch", device->mac_str, device->name);
             soft_set_category(&device->category, CATEGORY_WATCH);
             break;
 
         case 0x0c:
             // Handoff - phones, iPads, and Macs all do this
             device_set_name(device, "Apple Handoff", NAME_CONF_MANUFACTURER);
-            ESP_LOGI(TAG, "%s '%s' Handoff", device->mac_str, device->name);
+            ESP_LOGD(TAG, "%s '%s' Handoff", device->mac_str, device->name);
             soft_set_category(&device->category, CATEGORY_PHONE);  // might be an iPad or Mac
             break;
 
         case 0x0d:
             // Instant Hotspot - on user action
             device_set_name(device, "Apple WifiSet", NAME_CONF_DEVICE);
-            ESP_LOGI(TAG, "%s '%s' WifiSet", device->mac_str, device->name);
+            ESP_LOGD(TAG, "%s '%s' WifiSet", device->mac_str, device->name);
             soft_set_category(&device->category, CATEGORY_PHONE);  // might be an iPad, assume phone
             break;
 
         case 0x0e:
             // Instant Hotspot - reaction to target presence
             device_set_name(device, "Apple Hotspot", NAME_CONF_DEVICE);
-            ESP_LOGI(TAG, "%s '%s' Hotspot", device->mac_str, device->name);
+            ESP_LOGD(TAG, "%s '%s' Hotspot", device->mac_str, device->name);
             soft_set_category(&device->category, CATEGORY_PHONE);  // could be Mac, iPad or iPhone
             break;
 
@@ -150,7 +150,7 @@ void apple_heuristic_process(ble_device_t *device, const uint8_t *payload, uint8
             char temp_name[MAX_NAME_LENGTH];
             snprintf(temp_name, sizeof(temp_name), "Apple Near af=%.2x at=%.2x", payload[2], payload[3]);
             device_set_name(device, temp_name, NAME_CONF_MANUFACTURER);
-            ESP_LOGI(TAG, "%s '%s' Nearby Action 0x0f", device->mac_str, device->name);
+            ESP_LOGD(TAG, "%s '%s' Nearby Action 0x0f", device->mac_str, device->name);
             break;
         }
 
@@ -163,7 +163,7 @@ void apple_heuristic_process(ble_device_t *device, const uint8_t *payload, uint8
             uint8_t information_byte = payload[3];
             uint8_t activity_bits = payload[2] & 0xf9;      // everything but the device/screen bits
 
-            ESP_LOGI(TAG, "%s '%s' Nearby Info: d=%.1x info=%.2x act=%.2x",
+            ESP_LOGD(TAG, "%s '%s' Nearby Info: d=%.1x info=%.2x act=%.2x",
                      device->mac_str, device->name, device_bit, information_byte, activity_bits);
 
             // temp_name deliberately excludes activity_bits: it reflects
@@ -228,19 +228,19 @@ void apple_heuristic_process(ble_device_t *device, const uint8_t *payload, uint8
             // in the original pi-sniffer (predates AirTags); documented by
             // later public reverse-engineering of the Continuity protocol.
             device_set_name(device, "Find My", NAME_CONF_MANUFACTURER);
-            ESP_LOGI(TAG, "%s '%s' Find My", device->mac_str, device->name);
+            ESP_LOGD(TAG, "%s '%s' Find My", device->mac_str, device->name);
             device->category = CATEGORY_BEACON;  // hard set: unambiguous once seen, like iBeacon
             break;
 
         case 0x13:
             // New Apple device type - what is it? M1 laptop?
             device_set_name(device, "Apple Type 0x13", NAME_CONF_MANUFACTURER);
-            ESP_LOGI(TAG, "%s '%s' Apple 0x13", device->mac_str, device->name);
+            ESP_LOGD(TAG, "%s '%s' Apple 0x13", device->mac_str, device->name);
             soft_set_category(&device->category, CATEGORY_COMPUTER);  // 100% sure this is a laptop not a phone
             break;
 
         default:
-            ESP_LOGI(TAG, "%s '%s' Did not recognize Apple device type 0x%.2x",
+            ESP_LOGD(TAG, "%s '%s' Did not recognize Apple device type 0x%.2x",
                      device->mac_str, device->name, apple_device_type);
             break;
     }

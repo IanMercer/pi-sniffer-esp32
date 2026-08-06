@@ -68,7 +68,7 @@ static void on_device_discovered(const uint8_t *mac,
         return;
     }
     
-#if DEBUG_LOGGING && DEBUG_DEVICE_DISCOVERY
+#if DEBUG_LOGGING
     char mfg_buf[8];
 
     // Hex-dump the raw manufacturer-specific payload (beyond just the 2-byte
@@ -400,11 +400,19 @@ static void run_normal_mode(wifi_credentials_t *creds) {
  * Main application entry point
  */
 void app_main(void) {
+    // The runtime log level defaults to INFO (CONFIG_LOG_DEFAULT_LEVEL_INFO
+    // in sdkconfig) even though DEBUG-level logs are compiled in
+    // (CONFIG_LOG_MAXIMUM_LEVEL_DEBUG) - override individual tags here to
+    // surface their ESP_LOGD output without changing the default for
+    // everything else. Use esp_log_level_set("*", ESP_LOG_DEBUG) instead to
+    // raise every tag at once.
+    // esp_log_level_set("APPLE_HEUR", ESP_LOG_DEBUG);
+
     ESP_LOGI(TAG, "");
     ESP_LOGI(TAG, "========================================");
-    ESP_LOGI(TAG, "   ESP32 BLE Sniffer v1.0");
+    ESP_LOGI(TAG, "   ESP32 BLE Sniffer v1.1");
     ESP_LOGI(TAG, "========================================");
-    
+
     // Initialize provisioning system (NVS)
     if (!wifi_provision_init()) {
         ESP_LOGE(TAG, "Failed to initialize provisioning!");
