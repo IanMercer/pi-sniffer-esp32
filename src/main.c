@@ -59,7 +59,7 @@ static device_list_t device_list;
 // dependency on scan timing entirely.
 static SemaphoreHandle_t device_list_mutex = NULL;
 
-// Device ID for this sensor (derived from WiFi MAC)
+// Device ID for this sensor (derived from WiFi MAC or platformio.ini)
 static char device_id[32];
 
 // Last report time
@@ -109,11 +109,7 @@ static void on_device_discovered(const uint8_t *mac,
 #if DEBUG_DEVICE_DISCOVERY
     char mfg_buf[8];
 
-    // Hex-dump the raw manufacturer-specific payload (beyond just the 2-byte
-    // company ID) so unrecognized devices - e.g. a Samsung TV that only
-    // reports as "phone" - can be investigated and correlated against real
-    // captured samples, the same way the original pi-sniffer's manufacturer
-    // heuristics were built up from observed byte patterns.
+    // Hex-dump the raw manufacturer-specific payload
     char payload_hex[48] = "";
     if (manufacturer_payload != NULL && manufacturer_payload_len > 0) {
         uint8_t n = manufacturer_payload_len;
@@ -294,9 +290,9 @@ static void print_summary(void) {
             int used = snprintf(streams_buf, sizeof(streams_buf), "  streams:");
             for (int s = 0; s < device->stream_count && used > 0 && (size_t)used < sizeof(streams_buf); s++) {
                 used += snprintf(streams_buf + used, sizeof(streams_buf) - used, " %02x[%lds-%lds]",
-                                  device->streams[s].type,
-                                  (long)(now - device->streams[s].first_seen),
-                                  (long)(now - device->streams[s].last_seen));
+                                 device->streams[s].type,
+                                 (long)(now - device->streams[s].first_seen),
+                                 (long)(now - device->streams[s].last_seen));
             }
         }
 #else
@@ -330,7 +326,6 @@ static void on_button_event(button_event_t event) {
         // (print summary) stays active.
         case BUTTON_EVENT_DOUBLE_PRESS:
             ESP_LOGW(TAG, "Double-press detected! Entering config mode...");
-            // Clear credentials and reboot into config mode
             wifi_provision_clear_credentials();
             vTaskDelay(500 / portTICK_PERIOD_MS);
             wifi_provision_reboot();
@@ -389,11 +384,9 @@ static void report_task(void *pvParameters) {
             }
 
 #if ENABLE_MAC_PACKING
-            // Detect MAC-rotated devices so they aren't double-counted
             mac_pack_run(&device_list);
 #endif
 
-            // Print summary
             print_summary();
 
 #if !DISABLE_API_SEND
@@ -467,7 +460,7 @@ static void report_task(void *pvParameters) {
                 case REPORT_TRANSPORT_WIFI:
                     if (mqtt_report_is_connected()) {
                         char *json_body = device_json_build_minimal(fix.valid, fix.latitude, fix.longitude,
-                                                                      fix.fix_time, summary.phones, device_id);
+                                                                    fix.fix_time, summary.phones, device_id);
                         if (json_body != NULL) {
                             wifi_queued = mqtt_report_publish(topic, json_body, MQTT_QOS);
                             free(json_body);
@@ -547,13 +540,11 @@ static void report_task(void *pvParameters) {
  */
 static void scan_task(void *pvParameters) {
     while (1) {
-        // Start a scan cycle
         if (ble_scanner_get_status() != SCANNER_RUNNING) {
             ESP_LOGI(TAG, "Starting BLE scan for %d seconds", SCAN_DURATION_SEC);
             ble_scanner_start(SCAN_DURATION_SEC, on_device_discovered);
         }
 
-        // Wait for scan to complete
         vTaskDelay((SCAN_DURATION_SEC + 1) * 1000 / portTICK_PERIOD_MS);
     }
 }
@@ -571,13 +562,11 @@ static void run_provisioning_mode(void) {
     ESP_LOGI(TAG, "");
     ESP_LOGI(TAG, "=================================");
     
-    // Start the captive portal
     if (!wifi_provision_start_portal()) {
         ESP_LOGE(TAG, "Failed to start provisioning portal!");
         return;
     }
     
-    // Wait indefinitely - the portal will reboot when configured
     while (1) {
         vTaskDelay(1000 / portTICK_PERIOD_MS);
     }
@@ -591,7 +580,6 @@ static void run_normal_mode(wifi_credentials_t *creds) {
     ESP_LOGI(TAG, "   ESP32 BLE Sniffer Starting");
     ESP_LOGI(TAG, "=================================");
     
-    // Initialize device list
     device_list_init(&device_list);
 
     // Guards device_list - must exist before ble_scanner_init()/scan_task
@@ -617,20 +605,21 @@ static void run_normal_mode(wifi_credentials_t *creds) {
     ESP_LOGI(TAG, "Connecting to WiFi: %s", creds->ssid);
     wifi_connect(creds->ssid, creds->password);
 
-    // Device ID from the WiFi MAC address - available as soon as the driver
-    // is up, doesn't need association to complete, so this no longer
-    // depends on (or waits for) a successful connection.
+    // --- DEVICE ID SETUP ---
+#ifdef DEVICE_NAME
+    // Use custom name from platformio.ini if defined
+    snprintf(device_id, sizeof(device_id), "%s", DEVICE_NAME);
+#else
+    // Default to device ID from WiFi MAC address
     char mac_str[18];
     if (wifi_get_mac(mac_str)) {
         // Create device ID from MAC (use last 6 hex digits without colons)
-        // mac_str format: "XX:XX:XX:XX:XX:XX"
         device_id[0] = 'E';
         device_id[1] = 'S';
         device_id[2] = 'P';
         device_id[3] = '3';
         device_id[4] = '2';
         device_id[5] = '_';
-        // Copy last 6 hex chars (positions 9,10,12,13,15,16)
         device_id[6] = mac_str[9];
         device_id[7] = mac_str[10];
         device_id[8] = mac_str[12];
@@ -641,6 +630,7 @@ static void run_normal_mode(wifi_credentials_t *creds) {
     } else {
         strcpy(device_id, "ESP32_UNKNOWN");
     }
+#endif
     ESP_LOGI(TAG, "Device ID: %s", device_id);
 
     // Time sync needs WiFi actually connected - waits for that in the
@@ -690,7 +680,6 @@ static void run_normal_mode(wifi_credentials_t *creds) {
     button_handler_init();
     button_handler_register_callback(on_button_event);
     
-    // Initialize BLE scanner
     ESP_LOGI(TAG, "Initializing BLE scanner...");
     if (!ble_scanner_init()) {
         ESP_LOGE(TAG, "BLE scanner init failed!");
@@ -711,13 +700,9 @@ static void run_normal_mode(wifi_credentials_t *creds) {
 
     ESP_LOGI(TAG, "Starting scan and report tasks...");
     
-    // Initialize last report time
     last_report_time = time(NULL);
     
-    // Create scan task
     xTaskCreate(scan_task, "scan_task", 4096, NULL, 5, NULL);
-    
-    // Create report task
     xTaskCreate(report_task, "report_task", 8192, NULL, 4, NULL);
     
     ESP_LOGI(TAG, "=================================");
@@ -736,56 +721,17 @@ static void run_normal_mode(wifi_credentials_t *creds) {
  * Main application entry point
  */
 void app_main(void) {
-    // The runtime log level defaults to INFO (CONFIG_LOG_DEFAULT_LEVEL_INFO
-    // in sdkconfig) even though DEBUG-level logs are compiled in
-    // (CONFIG_LOG_MAXIMUM_LEVEL_DEBUG) - override individual tags here to
-    // surface their ESP_LOGD output without changing the default for
-    // everything else. Use esp_log_level_set("*", ESP_LOG_DEBUG) instead to
-    // raise every tag at once.
-    // esp_log_level_set("APPLE_HEUR", ESP_LOG_DEBUG);
-
-    ESP_LOGI(TAG, "");
-    ESP_LOGI(TAG, "========================================");
-    ESP_LOGI(TAG, "   ESP32 BLE Sniffer v1.1");
-    ESP_LOGI(TAG, "========================================");
-
-    // Initialize provisioning system (NVS)
-    if (!wifi_provision_init()) {
-        ESP_LOGE(TAG, "Failed to initialize provisioning!");
-        return;
-    }
-
-#if USE_STATIC_WIFI_CREDENTIALS
-    // Credentials compiled in from secrets.h - no boot double-press window,
-    // no provisioning AP/captive portal, NVS-stored credentials ignored.
-    wifi_credentials_t creds = { .configured = true };
-    strlcpy(creds.ssid, WIFI_SSID, sizeof(creds.ssid));
-    strlcpy(creds.password, WIFI_PASSWORD, sizeof(creds.password));
-    run_normal_mode(&creds);
-#else
-    // Check for double-press at boot to enter config mode
-    // Give user 3 seconds to double-press the BOOT button
-    config_mode = button_check_double_press_boot(3000);
+    ESP_LOGI(TAG, "Starting app_main");
     
-    // Also enter config mode if no credentials are stored
-    if (!config_mode && !wifi_provision_has_credentials()) {
-        ESP_LOGI(TAG, "No WiFi credentials found, entering config mode");
-        config_mode = true;
-    }
+    // Check boot count or button press to enter config mode
+    button_handler_init();
     
-    if (config_mode) {
-        // Run WiFi provisioning portal
-        run_provisioning_mode();
+    wifi_credentials_t creds;
+    if (wifi_provision_get_credentials(&creds)) {
+        ESP_LOGI(TAG, "Found stored WiFi credentials, starting normal mode");
+        run_normal_mode(&creds);
     } else {
-        // Load credentials and run normal mode
-        wifi_credentials_t creds;
-        if (wifi_provision_load_credentials(&creds)) {
-            run_normal_mode(&creds);
-        } else {
-            ESP_LOGE(TAG, "Failed to load credentials!");
-            config_mode = true;
-            run_provisioning_mode();
-        }
+        ESP_LOGI(TAG, "No WiFi credentials found, starting provisioning mode");
+        run_provisioning_mode();
     }
-#endif
 }
