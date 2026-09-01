@@ -98,7 +98,7 @@ typedef enum {
 // no point bringing up the modem's data connection on boards/deployments
 // that only need WiFi.
 #ifndef ENABLE_CELLULAR
-#define ENABLE_CELLULAR              1
+#define ENABLE_CELLULAR             1
 #endif
 
 // CELLULAR_APN is defined in secrets.h (gitignored) - see this file's top
@@ -370,6 +370,6 @@ typedef enum {
 // is phones. Does not affect the summary's aggregate category counts
 // (Total/Phones/Computers/.../Beacons/Other) - those stay in the log as a
 // compact crowd overview regardless of this setting.
-#define PHONES_ONLY              0
+#define PHONES_ONLY             0
 
 #endif // CONFIG_H
