@@ -161,32 +161,45 @@ static bool cellular_http_do_post(const char *json_body) {
         ok = false;
     }
 
-    // Best-effort, not fatal: confirmed on hardware that this SIM7670G
-    // firmware rejects AT+HTTPPARA="CID",1 with a plain ERROR even though
-    // PDP context 1 is already defined and active (AT+CGDCONT/AT+CGACT
-    // above both succeeded) - this module variant's HTTP service appears to
-    // just bind to whichever PDP context is already up rather than
-    // supporting an explicit CID selector, unlike what SIMCom's general
-    // HTTP(S) application note documents. Warn and continue rather than
-    // aborting the whole sequence over an optional selector that isn't
-    // needed when there's only one context anyway.
+    // Best-effort, not fatal: confirmed on hardware (and now against the
+    // SIMCom SIM7672X & SIM7652X Series_HTTP(S)_Application Note, whose
+    // AT+HTTPPARA "Defined Values" table has no "CID" entry at all - just
+    // URL/CONNECTTO/RECVTO/CONTENT/ACCEPT/SSLCFG/USERDATA/READMODE) that
+    // this SIM7670G firmware's HTTP command set has no CID selector -
+    // AT+HTTPPARA="CID",1 unconditionally ERRORs regardless of PDP state.
+    // The HTTP service just binds to whichever PDP context is already up.
+    // Warn and continue rather than aborting the whole sequence over a
+    // selector that isn't needed when there's only one context anyway.
     if (ok && !cellular_http_at_locked("AT+HTTPPARA=\"CID\",1", resp, sizeof(resp), CELLULAR_AT_TIMEOUT_MS)) {
-        ESP_LOGW(TAG, "AT+HTTPPARA=\"CID\",1 failed (not supported on this firmware?) - continuing anyway");
+        ESP_LOGW(TAG, "AT+HTTPPARA=\"CID\",1 failed (not supported on this firmware) - continuing anyway");
     }
 
+    // On-device confirmed (SIMCom SIM7672X & SIM7652X Series_HTTP(S)_
+    // Application Note, which this SIM7670G firmware's HTTP command set
+    // matches - see the 3.2 "Access to HTTPS server" examples): like
+    // AT+HTTPPARA="CID",1 above, AT+HTTPSSL isn't in this firmware's AT
+    // command set either and unconditionally ERRORs - this used to be sent
+    // here (and was, harmlessly, best-effort) but it was standing in for
+    // the actual HTTPS switch, which this firmware does per SSL *context*
+    // (AT+CSSLCFG, independent of the HTTP service) bound to the HTTP
+    // session via AT+HTTPPARA="SSLCFG",<ctx> after the URL is set. Skipping
+    // that bind is what was producing AT+HTTPACTION's status 715 (SSL
+    // handshake failed) on the European deployment - CSSLCFG alone
+    // configures the context but never tells HTTPACTION to use it.
 #if API_SKIP_CERT_CHECK
-    // Skip TLS certificate verification on the modem side, mirroring
+    // authmode 0 = don't verify the server's certificate, matching
     // API_SKIP_CERT_CHECK's existing (previously unused) intent for the
-    // WiFi/esp_http_client path. Exact AT+CSSLCFG syntax/semantics are
-    // unconfirmed on this board - best-effort, warn rather than abort, since
-    // a wrong command here shouldn't block an otherwise-working plain-HTTP
-    // deployment.
+    // WiFi/esp_http_client path. sslversion 4 = negotiate any TLS version
+    // (the app note's own example value) rather than leaving it at
+    // whatever this firmware's undocumented default is. Best-effort, warn
+    // rather than abort - a wrong command here shouldn't block an
+    // otherwise-working plain-HTTP deployment.
     if (ok && strncmp(API_URL, "https://", 8) == 0) {
-        if (!cellular_http_at_locked("AT+CSSLCFG=\"authmode\",0,0", resp, sizeof(resp), CELLULAR_AT_TIMEOUT_MS)) {
-            ESP_LOGW(TAG, "AT+CSSLCFG failed (needs on-device verification) - continuing anyway");
+        if (!cellular_http_at_locked("AT+CSSLCFG=\"sslversion\",0,4", resp, sizeof(resp), CELLULAR_AT_TIMEOUT_MS)) {
+            ESP_LOGW(TAG, "AT+CSSLCFG sslversion failed - continuing anyway");
         }
-        if (!cellular_http_at_locked("AT+HTTPSSL=1", resp, sizeof(resp), CELLULAR_AT_TIMEOUT_MS)) {
-            ESP_LOGW(TAG, "AT+HTTPSSL=1 failed - HTTPS POST may fail");
+        if (!cellular_http_at_locked("AT+CSSLCFG=\"authmode\",0,0", resp, sizeof(resp), CELLULAR_AT_TIMEOUT_MS)) {
+            ESP_LOGW(TAG, "AT+CSSLCFG authmode failed - continuing anyway");
         }
     }
 #endif
@@ -195,6 +208,16 @@ static bool cellular_http_do_post(const char *json_body) {
         snprintf(cmd, sizeof(cmd), "AT+HTTPPARA=\"URL\",\"%s\"", API_URL);
         if (!cellular_http_at_locked(cmd, resp, sizeof(resp), CELLULAR_AT_TIMEOUT_MS)) {
             ok = false;
+        }
+    }
+
+    // Bind SSL context 0 (configured above) to this HTTP session - required
+    // for AT+HTTPACTION to actually use it instead of failing the TLS
+    // handshake. See this function's doc comment above for why this
+    // replaced AT+HTTPSSL=1.
+    if (ok && strncmp(API_URL, "https://", 8) == 0) {
+        if (!cellular_http_at_locked("AT+HTTPPARA=\"SSLCFG\",0", resp, sizeof(resp), CELLULAR_AT_TIMEOUT_MS)) {
+            ESP_LOGW(TAG, "AT+HTTPPARA=\"SSLCFG\",0 failed - HTTPS POST may fail");
         }
     }
 
