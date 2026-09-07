@@ -99,6 +99,10 @@ static bool mqtt_client_ensure_started(void) {
         .broker.address.uri = MQTT_BROKER_URI,
         .credentials.client_id = s_client_id,
         .session.keepalive = MQTT_KEEPALIVE_SEC,
+#if defined(MQTT_AUTH_USER) && defined(MQTT_AUTH_PASS)
+        .credentials.username = MQTT_AUTH_USER,
+        .credentials.authentication.password = MQTT_AUTH_PASS,
+#endif
     };
 
     s_client = esp_mqtt_client_init(&cfg);

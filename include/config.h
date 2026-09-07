@@ -49,10 +49,13 @@ typedef enum {
 // cellular path (AT+CMQTTCONNECT, needs host/port split out) connect here.
 // Publicly reachable hostname (not a LAN-only address) - needed for the
 // cellular path, which isn't on the same network as a local broker would
-// be. Plain (unencrypted) MQTT on the standard port for now; TLS/auth is
-// still an open question, see plans/4g-integration.md.
+// be. Plain (unencrypted) MQTT on the standard port for now; TLS is still an
+// open question, see plans/4g-integration.md.
 // MQTT_BROKER_HOST/PORT/URI are defined in secrets.h (gitignored) - see
-// this file's top comment.
+// this file's top comment. Optional MQTT_AUTH_USER/MQTT_AUTH_PASS, also in
+// secrets.h, add username/password auth on both paths (mqtt_report.c's
+// esp_mqtt_client_config_t credentials, cellular.c's AT+CMQTTCONNECT
+// trailing username/password params) only when both are defined.
 
 // Full publish topic is "<prefix>/<device_id>" - one topic per unit, same
 // JSON body device_json_build() produces today regardless of transport.

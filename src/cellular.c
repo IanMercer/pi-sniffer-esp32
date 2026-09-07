@@ -219,7 +219,10 @@ bool cellular_pdp_is_up(void) {
  * logic becomes more targeted later.
  */
 static bool cellular_mqtt_session_connect(void) {
-    char cmd[160];
+    // 160 was enough for the bare CONNECT command; widened to 256 (matching
+    // cellular_http.c's cmd[] size) now that MQTT_AUTH_USER/MQTT_AUTH_PASS
+    // can add two more quoted strings onto the same AT+CMQTTCONNECT line.
+    char cmd[256];
     char resp[CELLULAR_AT_RESP_BUF_SIZE];
 
     if (!s_mqtt_started) {
@@ -283,8 +286,18 @@ static bool cellular_mqtt_session_connect(void) {
         s_mqtt_acquired = true;
     }
 
+    // Trailing "<user_name>","<pass_word>" params, per the SIM7672X/SIM7652X
+    // MQTT(S) Application Note (same doc as CMQTTSTART's timeout above) -
+    // only appended when secrets.h defines both, same as MQTT_AUTH_USER/
+    // MQTT_AUTH_PASS's other consumer, mqtt_report.c's esp-mqtt config.
+#if defined(MQTT_AUTH_USER) && defined(MQTT_AUTH_PASS)
+    snprintf(cmd, sizeof(cmd), "AT+CMQTTCONNECT=%d,\"tcp://%s:%d\",%d,1,\"%s\",\"%s\"",
+             CELLULAR_MQTT_CLIENT_INDEX, MQTT_BROKER_HOST, MQTT_BROKER_PORT, MQTT_KEEPALIVE_SEC,
+             MQTT_AUTH_USER, MQTT_AUTH_PASS);
+#else
     snprintf(cmd, sizeof(cmd), "AT+CMQTTCONNECT=%d,\"tcp://%s:%d\",%d,1",
              CELLULAR_MQTT_CLIENT_INDEX, MQTT_BROKER_HOST, MQTT_BROKER_PORT, MQTT_KEEPALIVE_SEC);
+#endif
     // Connect can take a while (network attach + broker handshake), so give
     // it more headroom than the usual short AT exchange.
     if (!modem_uart_send_at(cmd, resp, sizeof(resp), CELLULAR_AT_TIMEOUT_MS * 3) ||
