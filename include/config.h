@@ -150,6 +150,11 @@ typedef enum {
 // verifies via esp_crt_bundle_attach and ignores this.
 #define API_SKIP_CERT_CHECK 1
 
+// Optional HTTP Basic Auth for API_URL - API_AUTH_USER/API_AUTH_PASS, defined
+// in secrets.h only when the endpoint requires it. cellular_http.c sends it via
+// AT+HTTPPARA="USERDATA",... only when both are defined, so deployments
+// without them are unaffected.
+
 // AT+HTTPACTION's result arrives later as an unsolicited "+HTTPACTION" URC,
 // not synchronously with the command's own OK - this bounds how long
 // cellular_http_task waits for that URC before giving up. Needs on-device

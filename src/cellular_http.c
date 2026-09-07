@@ -20,6 +20,10 @@
 #include "freertos/queue.h"
 #include "esp_log.h"
 
+#if defined(API_AUTH_USER) && defined(API_AUTH_PASS)
+#include "mbedtls/base64.h"
+#endif
+
 static const char *TAG = "CELLULAR_HTTP";
 
 #define CELLULAR_HTTP_AT_RESP_BUF_SIZE 256
@@ -120,6 +124,44 @@ static int cellular_http_parse_action_status(const char *resp) {
     }
     return atoi(comma + 1);
 }
+
+#if defined(API_AUTH_USER) && defined(API_AUTH_PASS)
+/**
+ * Set the Authorization header for the pending request via
+ * AT+HTTPPARA="USERDATA",... (a raw custom-header string, per the SIMCom
+ * SIM7672X & SIM7652X Series_HTTP(S)_Application Note's AT+HTTPPARA
+ * "Defined Values" table - see cellular_http_do_post()'s CID comment above
+ * for where that table is referenced). Only compiled in when secrets.h
+ * defines both API_AUTH_USER and API_AUTH_PASS, so deployments that don't
+ * need auth (this project's own API_URL) never send this header at all -
+ * see config.h's API_AUTH_USER/API_AUTH_PASS comment. Assumes the UART lock
+ * is already held, same as cellular_http_at_locked().
+ */
+static bool cellular_http_send_auth_header_locked(char *resp, size_t resp_size) {
+    char credentials[128];
+    int n = snprintf(credentials, sizeof(credentials), "%s:%s", API_AUTH_USER, API_AUTH_PASS);
+    if (n < 0 || (size_t)n >= sizeof(credentials)) {
+        ESP_LOGW(TAG, "API_AUTH_USER/API_AUTH_PASS too long for credentials buffer");
+        return false;
+    }
+
+    // Base64-encoded output is ~4/3 the input length - 196 bytes comfortably
+    // covers credentials[]'s 128-byte input plus mbedtls's null terminator.
+    unsigned char encoded[196];
+    size_t encoded_len = 0;
+    if (mbedtls_base64_encode(encoded, sizeof(encoded), &encoded_len,
+                               (const unsigned char *)credentials, (size_t)n) != 0) {
+        ESP_LOGW(TAG, "Base64-encoding API_AUTH_USER/API_AUTH_PASS failed");
+        return false;
+    }
+    encoded[encoded_len] = '\0';
+
+    char cmd[256];
+    snprintf(cmd, sizeof(cmd), "AT+HTTPPARA=\"USERDATA\",\"Authorization: Basic %s\"",
+             (char *)encoded);
+    return cellular_http_at_locked(cmd, resp, resp_size, CELLULAR_AT_TIMEOUT_MS);
+}
+#endif
 
 /**
  * The actual POST: the full AT+HTTPINIT..AT+HTTPACTION..AT+HTTPTERM
@@ -225,6 +267,23 @@ static bool cellular_http_do_post(const char *json_body) {
                                         resp, sizeof(resp), CELLULAR_AT_TIMEOUT_MS)) {
         ok = false;
     }
+
+#if defined(API_AUTH_USER) && defined(API_AUTH_PASS)
+    // Best-effort Accept header (server doesn't strictly need it, but the
+    // known-working request against this server sent it) - warn and
+    // continue rather than abort, same as the other cosmetic AT+HTTPPARA
+    // calls above.
+    if (ok && !cellular_http_at_locked("AT+HTTPPARA=\"ACCEPT\",\"application/json\"",
+                                        resp, sizeof(resp), CELLULAR_AT_TIMEOUT_MS)) {
+        ESP_LOGW(TAG, "AT+HTTPPARA=\"ACCEPT\",\"application/json\" failed - continuing anyway");
+    }
+    // Unlike ACCEPT, this one IS fatal: without it the request goes out
+    // unauthenticated and just draws the same 401 this was added to fix.
+    if (ok && !cellular_http_send_auth_header_locked(resp, sizeof(resp))) {
+        ESP_LOGW(TAG, "Failed to set Authorization header - aborting POST");
+        ok = false;
+    }
+#endif
 
     if (ok) {
         snprintf(cmd, sizeof(cmd), "AT+HTTPDATA=%d,%d", (int)body_len, CELLULAR_AT_TIMEOUT_MS / 1000);
