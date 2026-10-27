@@ -85,6 +85,15 @@ bool mac_pack_compatible(const ble_device_t *older, const ble_device_t *newer) {
         return false;
     }
 
+    // Cannot be the same device if both advertise manufacturer data under
+    // different company IDs (observed: an iPhone linked to an Oura Ring).
+    bool different_manufacturers =
+        (older->has_manufacturer_data && newer->has_manufacturer_data &&
+         older->manufacturer_id != newer->manufacturer_id);
+    if (different_manufacturers) {
+        return false;
+    }
+
     // Cannot be the same device if the older device's category is unknown,
     // or both categories are known and differ.
     bool different_categories =

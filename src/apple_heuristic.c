@@ -5,7 +5,7 @@
  * 0x004C) to identify what kind of message a device is sending - Proximity
  * Pairing (AirPods), Nearby Info (iPhone/iPad/Watch), Handoff, AirDrop,
  * AirPlay, HomeKit, etc. - and uses that to set the device's name/category
- * with more confidence than the generic manufacturer/random-address guesses
+ * with more confidence than the generic OUI/name-pattern guesses
  * in device_categorize() can.
  *
  * Ported from the original pi-sniffer project's

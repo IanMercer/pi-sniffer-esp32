@@ -149,6 +149,24 @@ static void test_compatible(void) {
           "a known name vs. a lower-confidence guess is not treated as a conflict");
 }
 
+static void test_compatible_rejects_different_manufacturers(void) {
+    // Observed on hardware: an iPhone (Apple, 0x004C) was linked as rotating
+    // into an Oura Ring (0x02B2) because both were categorized as phones.
+    ble_device_t older = make_device(1, 0, 100, 5, ADDRESS_TYPE_RANDOM, CATEGORY_PHONE, "");
+    ble_device_t newer = make_device(2, 105, 200, 5, ADDRESS_TYPE_RANDOM, CATEGORY_PHONE, "");
+    older.has_manufacturer_data = true;
+    older.manufacturer_id = 0x004C;
+    newer.has_manufacturer_data = true;
+    newer.manufacturer_id = 0x02B2;
+    CHECK(!mac_pack_compatible(&older, &newer), "different manufacturer IDs are incompatible");
+
+    newer.manufacturer_id = 0x004C;
+    CHECK(mac_pack_compatible(&older, &newer), "same manufacturer ID is still compatible");
+
+    newer.has_manufacturer_data = false;
+    CHECK(mac_pack_compatible(&older, &newer), "missing manufacturer data on one side doesn't block a link");
+}
+
 static void test_probability(void) {
     ble_device_t older = make_device(1, 0, 100, 5, ADDRESS_TYPE_RANDOM, CATEGORY_PHONE, "phone");
     ble_device_t near = make_device(2, 105, 200, 5, ADDRESS_TYPE_RANDOM, CATEGORY_PHONE, "phone");
@@ -216,7 +234,7 @@ static void test_summary_excludes_weak_rssi(void) {
     // BLE receiver sensitivity, where a misdecoded MAC can masquerade as a
     // spurious "device".
     list.devices[1] = make_device(2, 0, 50, 5, ADDRESS_TYPE_RANDOM, CATEGORY_PHONE, "");
-    list.devices[1].raw_rssi = -105;
+    list.devices[1].raw_rssi = MIN_RSSI_FOR_SUMMARY - 1;
 
     device_summary_t summary;
     device_get_summary(&list, &summary);
@@ -591,6 +609,7 @@ int main(void) {
     test_overlap();
     test_blip();
     test_compatible();
+    test_compatible_rejects_different_manufacturers();
     test_probability();
     test_summary_excludes_blips();
     test_summary_excludes_weak_rssi();

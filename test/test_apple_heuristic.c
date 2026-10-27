@@ -10,6 +10,7 @@
  */
 
 #include "apple_heuristic.h"
+#include "device.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -194,6 +195,47 @@ static void test_empty_payload_is_ignored(void) {
     CHECK(d.category == CATEGORY_UNKNOWN, "a zero-length payload is a safe no-op");
 }
 
+static void test_apple_unrecognized_first_packet_not_phone(void) {
+    // Observed on hardware: an Apple TV whose first packet was an
+    // unrecognized Continuity type got device_categorize()'s Apple ->
+    // phone guess, which then blocked AirPlay's soft-set to fixed forever.
+    static device_list_t list;
+    device_list_init(&list);
+    uint8_t mac[6] = {0x47, 0x86, 0x4F, 0x26, 0x3C, 0xB3};
+
+    uint8_t unknown_type[] = {0x16, 0x00};
+    ble_device_t *d = device_update(&list, mac, -70, ADDRESS_TYPE_RANDOM, NULL,
+                                    0x004C /* Apple */, TX_POWER_UNKNOWN,
+                                    unknown_type, sizeof(unknown_type));
+    CHECK(d && d->category == CATEGORY_UNKNOWN,
+          "Apple device with only an unrecognized type stays uncategorized");
+
+    uint8_t airplay[] = {0x09, 0x06, 0x13, 0x24, 0xC0, 0xA8, 0x00, 0xF5};
+    d = device_update(&list, mac, -70, ADDRESS_TYPE_RANDOM, NULL,
+                      0x004C /* Apple */, TX_POWER_UNKNOWN,
+                      airplay, sizeof(airplay));
+    CHECK(d && d->category == CATEGORY_FIXED, "a later AirPlay packet still categorizes it as fixed");
+}
+
+static void test_unidentified_random_address_not_phone(void) {
+    // Observed on hardware: an Insta360 camera, an Oura Ring and unnamed
+    // IoT sensors were all counted as phones via the old random-address
+    // fallback.
+    static device_list_t list;
+    device_list_init(&list);
+    uint8_t cam[6] = {0xFD, 0xEB, 0xCC, 0x34, 0xE5, 0x5E};
+    uint8_t ring[6] = {0x58, 0xCD, 0x34, 0x85, 0xE4, 0x03};
+    uint8_t payload[] = {0x01, 0x00, 0x00, 0x00, 0x00};
+
+    ble_device_t *d = device_update(&list, cam, -90, ADDRESS_TYPE_RANDOM, "GO 3 87RFAH",
+                                    0x4F47, TX_POWER_UNKNOWN, payload, sizeof(payload));
+    CHECK(d && d->category == CATEGORY_UNKNOWN, "unidentified random-address device is not a phone");
+
+    d = device_update(&list, ring, -90, ADDRESS_TYPE_RANDOM, "Oura Ring 4",
+                      0x02B2, TX_POWER_UNKNOWN, payload, sizeof(payload));
+    CHECK(d && d->category == CATEGORY_WEARABLE, "Oura Ring is a wearable");
+}
+
 int main(void) {
     test_beacon_hard_sets_category();
     test_airpods_hard_sets_headphones();
@@ -209,6 +251,8 @@ int main(void) {
     test_name_confidence_precedence();
     test_unknown_type_is_ignored();
     test_empty_payload_is_ignored();
+    test_apple_unrecognized_first_packet_not_phone();
+    test_unidentified_random_address_not_phone();
 
     if (failures == 0) {
         printf("\nAll tests passed.\n");

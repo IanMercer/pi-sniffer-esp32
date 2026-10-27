@@ -209,9 +209,12 @@ void device_categorize(ble_device_t *device) {
     // Categorize based on manufacturer ID
     switch (device->manufacturer_id) {
         case APPLE_MANUFACTURER_ID:
-            // Apple devices - likely phone, tablet, or watch
-            // Could refine based on manufacturer data bytes
-            device->category = CATEGORY_PHONE;
+            // Left to apple_heuristic_process(), which decodes the actual
+            // Continuity message type. Guessing phone here used to stick
+            // permanently (its soft_set_category() only fills an unknown
+            // category), so an Apple TV whose first packet happened to be
+            // an unrecognized type was counted as a phone forever after,
+            // and HomeKit accessories (also Apple's company ID) always were.
             break;
 
         case MICROSOFT_MANUFACTURER_ID:
@@ -257,6 +260,11 @@ void device_categorize(ble_device_t *device) {
                  strstr(lower_name, "windows") || strstr(lower_name, "pc")) {
             device->category = CATEGORY_COMPUTER;
         }
+        else if (strstr(lower_name, "oura")) {
+            // Oura Ring - random address, so previously fell through to the
+            // random-address-means-phone guess
+            device->category = CATEGORY_WEARABLE;
+        }
         else if (strstr(lower_name, "watch") || strstr(lower_name, "band") ||
                  strstr(lower_name, "fitbit") || strstr(lower_name, "garmin")) {
             device->category = CATEGORY_WATCH;
@@ -291,12 +299,10 @@ void device_categorize(ble_device_t *device) {
         }
     }
     
-    // Categorize based on address type
-    // Random addresses are more likely to be phones/tablets (MAC randomization)
-    if (device->category == CATEGORY_UNKNOWN && 
-        device->address_type == ADDRESS_TYPE_RANDOM) {
-        device->category = CATEGORY_PHONE; // Assume phone for random addresses
-    }
+    // No random-address fallback: guessing phone for any unidentified
+    // random-address device inflated the phone count with IoT sensors,
+    // cameras and wearables (most modern BLE peripherals randomize too).
+    // Unidentified devices stay CATEGORY_UNKNOWN and count as "Other".
 }
 
 ble_device_t* device_update(device_list_t *list,
