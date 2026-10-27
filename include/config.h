@@ -6,6 +6,11 @@
 #ifndef CONFIG_H
 #define CONFIG_H
 
+// Board-specific capability flags (REPORT_TRANSPORT, ENABLE_CELLULAR,
+// ENABLE_GNSS) below are #ifndef-guarded so a PlatformIO env can override
+// them via build_flags - e.g. env:esp32c5 has no SIM7670G modem, so it
+// builds WiFi-only. The values here are the defaults for the S3 + modem board.
+
 // Deployment-specific network endpoints (API_URL, MQTT_BROKER_*,
 // CELLULAR_APN) live in secrets.h, which is gitignored - not checked into
 // source control. If this doesn't compile because secrets.h is missing,
@@ -21,6 +26,18 @@
 // Connect to it and open http://192.168.4.1 to configure WiFi
 
 #define WIFI_MAX_RETRY      10
+
+// Use WIFI_SSID/WIFI_PASSWORD from secrets.h instead of the captive-portal
+// provisioning flow - skips the boot double-press window and the "DC
+// Sniffer" AP entirely, and disables the runtime double/long-press
+// credential reset. Set per board via build_flags (env:esp32c5).
+#ifndef USE_STATIC_WIFI_CREDENTIALS
+#define USE_STATIC_WIFI_CREDENTIALS 0
+#endif
+
+#if USE_STATIC_WIFI_CREDENTIALS && (!defined(WIFI_SSID) || !defined(WIFI_PASSWORD))
+#error "USE_STATIC_WIFI_CREDENTIALS needs WIFI_SSID and WIFI_PASSWORD in secrets.h"
+#endif
 
 // ============================================================================
 // Reporting Configuration
@@ -38,7 +55,9 @@ typedef enum {
                                           // legacy full-device JSON format, see cellular_http.h
 } report_transport_t;
 
+#ifndef REPORT_TRANSPORT
 #define REPORT_TRANSPORT           REPORT_TRANSPORT_CELLULAR_HTTP
+#endif
 
 // Disable sending device reports entirely (set to 1 to disable, 0 to
 // enable) - applies to whichever REPORT_TRANSPORT is selected above, not
@@ -78,7 +97,9 @@ typedef enum {
 // ENABLE_GNSS - both share the modem's UART via modem_uart.h - but there's
 // no point bringing up the modem's data connection on boards/deployments
 // that only need WiFi.
+#ifndef ENABLE_CELLULAR
 #define ENABLE_CELLULAR              1
+#endif
 
 // CELLULAR_APN is defined in secrets.h (gitignored) - see this file's top
 // comment. No PDP username/password required for this deployment's SIM.
@@ -281,7 +302,9 @@ typedef enum {
 // ============================================================================
 // Poll the SIM7670G's GNSS receiver over UART via AT commands and log the
 // fix (lat/long/height/time) on a regular interval.
+#ifndef ENABLE_GNSS
 #define ENABLE_GNSS              1
+#endif
 
 // gnss_poll_now() is called exactly once per report cycle, synchronously,
 // from report_task() (main.c) - there's no independent GNSS polling task,
@@ -327,7 +350,9 @@ typedef enum {
 // density this is by far the noisiest log source, one line per BLE
 // advertisement seen. Independent of ble_scanner.c's own (lower-level, less
 // detailed) discovery line, which this same flag also gates.
-#define DEBUG_DEVICE_DISCOVERY  0
+#ifndef DEBUG_DEVICE_DISCOVERY
+#define DEBUG_DEVICE_DISCOVERY  1
+#endif
 
 // Append each device's per-Continuity-type stream windows (see
 // stream_window_t in device.h) to its line in the device summary, e.g.

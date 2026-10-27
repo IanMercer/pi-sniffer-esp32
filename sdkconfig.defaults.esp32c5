@@ -1,0 +1,12 @@
+# ESP32-C5 overrides, applied by ESP-IDF after sdkconfig.defaults
+CONFIG_ESPTOOLPY_FLASHSIZE_16MB=n
+CONFIG_ESPTOOLPY_FLASHSIZE_8MB=y
+CONFIG_ESPTOOLPY_FLASHSIZE="8MB"
+
+# External PSRAM (N8R4 module) - Bluedroid + WiFi + 128-entry device_list
+# exhaust the C5's internal RAM. Boot continues without it if absent.
+CONFIG_SPIRAM=y
+CONFIG_SPIRAM_IGNORE_NOTFOUND=y
+CONFIG_SPIRAM_USE_MALLOC=y
+CONFIG_SPIRAM_TRY_ALLOCATE_WIFI_LWIP=y
+CONFIG_BT_ALLOCATION_FROM_SPIRAM_FIRST=y

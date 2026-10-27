@@ -324,6 +324,10 @@ static void print_summary(void) {
  */
 static void on_button_event(button_event_t event) {
     switch (event) {
+#if !USE_STATIC_WIFI_CREDENTIALS
+        // No config mode to return to with compiled-in credentials (see
+        // USE_STATIC_WIFI_CREDENTIALS in config.h) - only single press
+        // (print summary) stays active.
         case BUTTON_EVENT_DOUBLE_PRESS:
             ESP_LOGW(TAG, "Double-press detected! Entering config mode...");
             // Clear credentials and reboot into config mode
@@ -339,7 +343,8 @@ static void on_button_event(button_event_t event) {
             vTaskDelay(1000 / portTICK_PERIOD_MS);
             wifi_provision_reboot();
             break;
-            
+#endif
+
         case BUTTON_EVENT_SINGLE_PRESS:
             // Print summary on single press. print_summary() itself doesn't
             // lock (see device_list_mutex's doc comment) - report_task()
@@ -719,9 +724,11 @@ static void run_normal_mode(wifi_credentials_t *creds) {
     ESP_LOGI(TAG, "   BLE Sniffer Running!");
     ESP_LOGI(TAG, "   Scan interval: %d sec", SCAN_DURATION_SEC);
     ESP_LOGI(TAG, "   Report interval: %d sec", REPORT_INTERVAL_SEC);
+#if !USE_STATIC_WIFI_CREDENTIALS
     ESP_LOGI(TAG, "");
     ESP_LOGI(TAG, "   Double-press BOOT button");
     ESP_LOGI(TAG, "   to enter config mode");
+#endif
     ESP_LOGI(TAG, "=================================");
 }
 
@@ -747,7 +754,15 @@ void app_main(void) {
         ESP_LOGE(TAG, "Failed to initialize provisioning!");
         return;
     }
-    
+
+#if USE_STATIC_WIFI_CREDENTIALS
+    // Credentials compiled in from secrets.h - no boot double-press window,
+    // no provisioning AP/captive portal, NVS-stored credentials ignored.
+    wifi_credentials_t creds = { .configured = true };
+    strlcpy(creds.ssid, WIFI_SSID, sizeof(creds.ssid));
+    strlcpy(creds.password, WIFI_PASSWORD, sizeof(creds.password));
+    run_normal_mode(&creds);
+#else
     // Check for double-press at boot to enter config mode
     // Give user 3 seconds to double-press the BOOT button
     config_mode = button_check_double_press_boot(3000);
@@ -772,4 +787,5 @@ void app_main(void) {
             run_provisioning_mode();
         }
     }
+#endif
 }

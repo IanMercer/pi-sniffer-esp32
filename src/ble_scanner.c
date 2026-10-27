@@ -233,8 +233,8 @@ bool ble_scanner_init(void) {
     ESP_ERROR_CHECK(ret);
     
     // Release memory for classic BT (we only need BLE)
-    // Note: ESP32-C3/C2/C6 don't have classic BT, so this is a no-op for them
-#if !CONFIG_IDF_TARGET_ESP32C3 && !CONFIG_IDF_TARGET_ESP32C2 && !CONFIG_IDF_TARGET_ESP32C6 && !CONFIG_IDF_TARGET_ESP32H2
+    // Note: ESP32-C3/C2/C5/C6 don't have classic BT, so this is a no-op for them
+#if !CONFIG_IDF_TARGET_ESP32C3 && !CONFIG_IDF_TARGET_ESP32C2 && !CONFIG_IDF_TARGET_ESP32C5 && !CONFIG_IDF_TARGET_ESP32C6 && !CONFIG_IDF_TARGET_ESP32H2
     ESP_ERROR_CHECK(esp_bt_controller_mem_release(ESP_BT_MODE_CLASSIC_BT));
 #endif
     
