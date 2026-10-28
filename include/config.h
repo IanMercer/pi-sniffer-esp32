@@ -52,20 +52,28 @@ typedef enum {
     REPORT_TRANSPORT_WIFI,
     REPORT_TRANSPORT_CELLULAR_MQTT,      // MQTT over cellular (AT+CMQTT*, cellular.c)
     REPORT_TRANSPORT_CELLULAR_HTTP,      // HTTP POST over cellular (AT+HTTP*, cellular_http.c) -
-                                          // legacy full-device JSON format, see cellular_http.h
+                                         // legacy full-device JSON format, see cellular_http.h
 } report_transport_t;
 
+<<<<<<< HEAD
 #ifndef REPORT_TRANSPORT
 #define REPORT_TRANSPORT           REPORT_TRANSPORT_CELLULAR_HTTP
 #endif
+=======
+#define REPORT_TRANSPORT           REPORT_TRANSPORT_WIFI
+>>>>>>> 55484d1 (Resolved merge conflicts between master and upstream/master)
 
-// Disable sending device reports entirely (set to 1 to disable, 0 to
-// enable) - applies to whichever REPORT_TRANSPORT is selected above, not
-// just one transport.
+// Disable sending device reports entirely (set to 1 to disable, 0 to enable)
 #define DISABLE_API_SEND    0
+
+// Default API endpoint placeholder if needed by legacy HTTP implementations
+#ifndef API_URL
+#define API_URL             "your_api_endpoint_here"
+#endif
 
 // MQTT broker - both the WiFi path (esp-mqtt, needs a full URI) and the
 // cellular path (AT+CMQTTCONNECT, needs host/port split out) connect here.
+<<<<<<< HEAD
 // Publicly reachable hostname (not a LAN-only address) - needed for the
 // cellular path, which isn't on the same network as a local broker would
 // be. Plain (unencrypted) MQTT on the standard port for now; TLS is still an
@@ -78,79 +86,41 @@ typedef enum {
 
 // Full publish topic is "<prefix>/<device_id>" - one topic per unit, same
 // JSON body device_json_build() produces today regardless of transport.
+=======
+>>>>>>> 55484d1 (Resolved merge conflicts between master and upstream/master)
 #define MQTT_TOPIC_PREFIX           "reports"
 #define MQTT_QOS                    1
 #define MQTT_KEEPALIVE_SEC          60
 
-// How often mqtt_report_task's outer loop re-kicks wifi_connect() once
-// wifi_manager.c's own fast burst-retry (WIFI_MAX_RETRY, back-to-back) has
-// already given up. A brief WiFi blip still recovers in seconds via that
-// existing fast retry, unchanged - this is only the paced fallback for a
-// genuinely down AP/outage, so the device doesn't sit permanently stuck the
-// way it could before (wifi_manager.c never retried again on its own).
 #define WIFI_RECONNECT_INTERVAL_SEC 300
 
 // ============================================================================
 // Cellular Configuration (SIM7670G modem-side AT+CMQTT*)
 // ============================================================================
+<<<<<<< HEAD
 // Enable the cellular MQTT transport (cellular.c). Independent of
 // ENABLE_GNSS - both share the modem's UART via modem_uart.h - but there's
 // no point bringing up the modem's data connection on boards/deployments
 // that only need WiFi.
 #ifndef ENABLE_CELLULAR
-#define ENABLE_CELLULAR              1
+#define ENABLE_CELLULAR             1
 #endif
 
 // CELLULAR_APN is defined in secrets.h (gitignored) - see this file's top
 // comment. No PDP username/password required for this deployment's SIM.
 
+=======
+#define ENABLE_CELLULAR             1
+>>>>>>> 55484d1 (Resolved merge conflicts between master and upstream/master)
 #define CELLULAR_AT_TIMEOUT_MS       10000
 #define CELLULAR_MQTT_CLIENT_INDEX   0
-
-// AT+CMQTTSTART's documented max response time is 12000ms per the
-// SIM7672X/SIM7652X MQTT(S) Application Note (the closest board-specific
-// reference found - hosted on Waveshare's own wiki page for this board).
-// An earlier version of this comment cited 120000ms from the older
-// SIM7500/7600/7800 MQTT AT command manual, which isn't specific to this
-// chip - corrected. Still longer than CELLULAR_AT_TIMEOUT_MS since it can
-// activate the PDP context on a cold/weak-signal attach.
 #define CELLULAR_CMQTTSTART_TIMEOUT_MS 12000
-
-// Outer-loop reconnect pacing, matching WIFI_RECONNECT_INTERVAL_SEC - cellular
-// has no independent fast-retry layer the way WiFi's event handler provides
-// (nothing signals a drop between publish attempts), so this is the only
-// reconnect pacing cellular_task has.
 #define CELLULAR_RECONNECT_BACKOFF_SEC 300
-
-// Conservative placeholder cap on a single AT+CMQTTPAYLOAD - the modem's
-// actual documented/firmware limit hasn't been confirmed on this board yet.
-// See "Data usage considerations" in plans/4g-integration.md - a full
-// MAX_DEVICES report can be tens of KB, likely needing payload
-// shrinking/compression for cellular-connected units well before this cap
-// is the binding constraint.
 #define CELLULAR_MQTT_MAX_PAYLOAD_LEN 4096
-
-// Skip a cellular send when nothing meaningful changed since the last one
-// actually sent - phone count identical and position (gnss_fix_t.latitude/
-// longitude, the *raw* unrounded floats, not the ~11m-rounded values that
-// go into the payload - see device_json_build_minimal()) moved less than
-// CELLULAR_POSITION_UNCHANGED_THRESHOLD_M - to cut needless AT+CMQTT*
-// traffic (and SIM data) for a stationary, steady-count unit. Still forces
-// a send at least every CELLULAR_HEARTBEAT_INTERVAL_SEC regardless, so a
-// unit that never moves/changes still proves it's alive on a predictable
-// cadence rather than going silent indefinitely. WiFi reporting is
-// unaffected - see report_throttle_should_send() in report_throttle.c.
-//
-// 5m (the original value) turned out to be inside the SIM7670G's own
-// stationary GNSS noise floor - confirmed on hardware: consecutive sends
-// with *identical* rounded lat/lon (e.g. two reports both showing
-// 47.5853,-122.0644 a few minutes apart) still triggered a send, meaning
-// the raw fix wandered past 5m and back within the same ~11m rounding
-// bucket purely from receiver jitter, not real movement. Raised well above
-// that noise floor so it only fires on an actual position change.
 #define CELLULAR_POSITION_UNCHANGED_THRESHOLD_M 20.0f
 #define CELLULAR_HEARTBEAT_INTERVAL_SEC          3600
 
+<<<<<<< HEAD
 // ----------------------------------------------------------------------
 // Cellular HTTP reporting (SIM7670G modem-side AT+HTTP*, cellular_http.c) -
 // alternative to REPORT_TRANSPORT_CELLULAR_MQTT (MQTT) above for the same
@@ -168,11 +138,11 @@ typedef enum {
 // above (see report_throttle.h) - the legacy payload is much larger than
 // cellular MQTT's minimal one, so sending it unconditionally every
 // REPORT_INTERVAL_SEC isn't viable on a metered plan.
+=======
+>>>>>>> 55484d1 (Resolved merge conflicts between master and upstream/master)
 #define API_TIMEOUT_MS      10000
-// Skip SSL certificate verification (e.g. for self-signed certs) - honored
-// by cellular_http.c (AT+CSSLCFG); http_client.c's dead WiFi path always
-// verifies via esp_crt_bundle_attach and ignores this.
 #define API_SKIP_CERT_CHECK 1
+<<<<<<< HEAD
 
 // Optional HTTP Basic Auth for API_URL - API_AUTH_USER/API_AUTH_PASS, defined
 // in secrets.h only when the endpoint requires it. cellular_http.c sends it via
@@ -185,121 +155,51 @@ typedef enum {
 // verification, same as CELLULAR_CMQTTSTART_TIMEOUT_MS was - starting
 // conservative per SIMCom's HTTP(S) application note's documented worst case
 // (a slow far-end server/DNS lookup).
+=======
+>>>>>>> 55484d1 (Resolved merge conflicts between master and upstream/master)
 #define CELLULAR_HTTP_ACTION_TIMEOUT_MS 120000
 
 // ============================================================================
 // BLE Scanning Configuration
 // ============================================================================
-// Duration of each scan cycle in seconds
 #define SCAN_DURATION_SEC       10
-
-// How often to send data to the API (seconds)
 #define REPORT_INTERVAL_SEC     30
-
-// Maximum number of devices to track
 #define MAX_DEVICES             128
-
-// Maximum age before removing a device from tracking (seconds)
 #define MAX_DEVICE_AGE_SEC      300
-
-// A device needs at least this many observations before it counts toward
-// device_get_summary()'s totals/categories. A single stray packet (seen
-// once, then never again) is weak evidence of a real nearby device - within
-// one SCAN_DURATION_SEC window a genuinely present device is almost always
-// seen more than once, given typical BLE advertising intervals - so
-// requiring a second sighting filters out one-off noise without meaningfully
-// delaying when a real device gets counted. Still shown in the per-device
-// log listing either way, just excluded from the category counts.
 #define DEVICE_MIN_SEEN_COUNT_FOR_SUMMARY 2
-
-// A device whose most recent RSSI is weaker (more negative) than this dBm
-// value is excluded from device_get_summary()'s totals/categories. Signals
-// this weak are at or below typical BLE receiver sensitivity (roughly -95 to
-// -100 dBm), where bit errors are common and a misdecoded MAC address can
-// masquerade as a brand-new "device" - in practice showing up as a
-// low-confidence chain of single-packet sightings that inflates the phone
-// count. Still shown in the per-device log listing either way, just
-// excluded from the category counts.
 #define MIN_RSSI_FOR_SUMMARY -105
 
 // ============================================================================
 // RSSI to Distance Configuration
 // ============================================================================
-// RSSI value at 1 meter distance (calibrate for your environment)
-// Typical values: -50 to -70 dBm
 #define RSSI_ONE_METER          -80
-
-// Path loss exponent (2.0-4.0)
-// Lower = indoor/cluttered, Higher = outdoor/open
-// Typical: 2.0-2.5 indoor, 3.0-4.0 outdoor
 #define PATH_LOSS_EXPONENT      2.5f
-
-// Maximum reasonable distance in meters (cap unrealistic values)
 #define MAX_DISTANCE_METERS     50.0f
-
-// Distance-bucket boundaries (meters) for the per-category breakdown in
-// print_summary() (main.c) - see device_get_distance_summary() in device.c.
-// Buckets are [0, DISTANCE_BUCKET_NEAR_M), [DISTANCE_BUCKET_NEAR_M,
-// DISTANCE_BUCKET_MID_M), [DISTANCE_BUCKET_MID_M, +inf).
 #define DISTANCE_BUCKET_NEAR_M   5.0f
 #define DISTANCE_BUCKET_MID_M    10.0f
 
 // ============================================================================
 // Device Identification
 // ============================================================================
-// Enable name resolution via BLE scan response
 #define ENABLE_NAME_RESOLUTION  1
-
-// Enable device categorization based on manufacturer data
 #define ENABLE_CATEGORIZATION   1
-
-// Decode Apple's Continuity protocol manufacturer data (AirPods, HomeKit,
-// Handoff, Nearby Info, etc.) for better name/category detection
 #define ENABLE_APPLE_HEURISTICS 1
 
 // ============================================================================
 // MAC-Rotation Packing Configuration
 // ============================================================================
-// Detect when a device's BLE MAC address has likely rotated (iOS/Android
-// random-MAC privacy feature) so the same physical device isn't double
-// counted as two separate devices.
 #define ENABLE_MAC_PACKING             1
-
-// Below this gap (seconds), a lone single-observation device is treated as
-// noise from the same burst rather than a real device.
 #define MAC_PACK_BLIP_MIN_GAP_SEC      2
-
-// Above this gap (seconds), a lone single-observation device is treated as
-// unrelated rather than a MAC rotation.
 #define MAC_PACK_BLIP_MAX_GAP_SEC      90
-
-// Time constant (seconds) for the exponential decay used to turn the gap
-// between an old device's last sighting and a new device's first sighting
-// into a confidence score.
 #define MAC_PACK_TIME_CONSTANT_SEC     30.0f
-
-// Minimum confidence required to record a superseded-by link.
 #define MAC_PACK_PROBABILITY_THRESHOLD 0.05f
-
-// Minimum number of matching bytes required for mac_pack_payload_matches()
-// to treat two devices' identical raw stream payload as decisive
-// same-device evidence. Guards against matching on short/low-entropy
-// payloads (e.g. a 1-byte status code that different real devices could
-// plausibly share by coincidence) - 3+ bytes of matching pseudo-random
-// session/auth content is a much safer bar.
 #define MAC_PACK_MIN_PAYLOAD_MATCH_LEN 3
-
-// Maximum number of distinct Apple Continuity message types tracked
-// concurrently per device (see stream_window_t in device.h). Sized to the
-// number of Continuity streams a single iPhone/iPad realistically emits at
-// once (Nearby Info, Proximity Pairing, Instant Hotspot, HomeKit, etc.);
-// when full, the least-recently-seen type is evicted to make room for a
-// new one.
 #define MAC_PACK_MAX_TRACKED_STREAMS    4
 
 // ============================================================================
 // GNSS Configuration (SIM7670G onboard modem)
 // ============================================================================
+<<<<<<< HEAD
 // Poll the SIM7670G's GNSS receiver over UART via AT commands and log the
 // fix (lat/long/height/time) on a regular interval.
 #ifndef ENABLE_GNSS
@@ -317,34 +217,22 @@ typedef enum {
 // guess: GPIO18 is the ESP32-S3's TX (into the modem's RX), GPIO17 is the
 // ESP32-S3's RX (from the modem's TX). UART_NUM_1, 115200 baud, 1024-byte
 // RX buffer confirmed correct.
+=======
+#define ENABLE_GNSS              1
+>>>>>>> 55484d1 (Resolved merge conflicts between master and upstream/master)
 #define GNSS_UART_NUM            UART_NUM_1
 #define GNSS_UART_TX_PIN         18   // ESP32-S3 -> modem RX
 #define GNSS_UART_RX_PIN         17   // modem TX -> ESP32-S3
 #define GNSS_UART_BAUD           115200
-
-// Time to let the modem finish booting before sending the first AT command
-// (seconds). Combo LTE+GNSS modems can be slow off a cold boot - this is
-// just the *initial* wait; GNSS_AT_SYNC_ATTEMPTS/GNSS_AT_SYNC_RETRY_MS below
-// add further patience on top of it.
 #define GNSS_POWERON_WAIT_SEC    10
-
-// How many times to retry "AT", GNSS_AT_SYNC_RETRY_MS apart, before giving
-// up on the modem during gnss_init(). At the defaults this allows up to
-// GNSS_POWERON_WAIT_SEC + (20 * 2s) = ~50s total for the modem to answer.
 #define GNSS_AT_SYNC_ATTEMPTS    20
 #define GNSS_AT_SYNC_RETRY_MS    2000
-
-// Discipline the ESP32's system clock (settimeofday()) from each GNSS fix's
-// own UTC date/time, so units with no WiFi/SNTP still get a correct wall
-// clock - see gnss_poll_now()'s system-clock-sync step. Skip the actual
-// settimeofday() call (and its log line) if the system clock is already
-// within this many seconds of the GPS time, so a clock already kept
-// accurate (e.g. by SNTP) isn't needlessly nudged every report cycle.
 #define GNSS_CLOCK_SYNC_THRESHOLD_SEC 2
 
 // ============================================================================
 // Debugging
 // ============================================================================
+<<<<<<< HEAD
 // Log individual device discoveries - the per-packet "Device: ..." line in
 // on_device_discovered() (main.c). Off by default: at any real device
 // density this is by far the noisiest log source, one line per BLE
@@ -361,8 +249,13 @@ typedef enum {
 // type with overlapping activity (a real conflict) or genuinely disjoint
 // stream types/windows (a possible missed ragged-handover link) - useful
 // when investigating a device count that looks too high or too low.
+=======
+#define DEBUG_DEVICE_DISCOVERY  0
+>>>>>>> 55484d1 (Resolved merge conflicts between master and upstream/master)
 #define DEBUG_STREAM_WINDOWS    1
+#define PHONES_ONLY             0
 
+<<<<<<< HEAD
 // Only log devices categorized as CATEGORY_PHONE - suppresses the per-scan
 // "Device: ..." discovery line (main.c) and the per-device row in the
 // summary listing (main.c) for everything else (tvs, beacons, tablets,
@@ -370,6 +263,8 @@ typedef enum {
 // is phones. Does not affect the summary's aggregate category counts
 // (Total/Phones/Computers/.../Beacons/Other) - those stay in the log as a
 // compact crowd overview regardless of this setting.
-#define PHONES_ONLY              0
+#define PHONES_ONLY             0
 
+=======
+>>>>>>> 55484d1 (Resolved merge conflicts between master and upstream/master)
 #endif // CONFIG_H

@@ -29,3 +29,6 @@ sdkconfig.old
 *.map
 
 node_modules/
+build_and_monitor.log
+*.log
+build_and_monitor.log
